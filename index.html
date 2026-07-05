@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <title>NeonBlock City</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0c1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NeonBlock">
+<meta name="description" content="Roblox-inspired original open-world block city game with missions, vehicles, ownership, and mobile controls.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="loading-screen"><div class="loading-title">NeonBlock City</div><div class="loading-sub">Streaming world...</div></div>
-<canvas id="game-canvas"></canvas>
+<canvas id="game-canvas" aria-label="NeonBlock City game canvas"></canvas>
 <div id="hud">
 <div id="hud-top-left">
 <div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
@@ -26,7 +29,7 @@
 <div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
 </div>
 <div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
-<div id="waypoint-arrow">^</div>
+<div id="waypoint-arrow">▲</div>
 <div id="debug-overlay">
 <div>FPS: <span id="debug-fps">0</span></div>
 <div>Pos: <span id="debug-pos">0,0,0</span></div>
@@ -41,10 +44,11 @@
 <div id="pause-overlay" class="hidden">
 <div class="menu-card">
 <h2>Pause</h2>
+<p class="menu-help">Desktop: WASD/arrow keys to move, Shift sprint, Space jump, E interact, Esc pause.</p>
 <button id="btn-resume">Resume</button>
 <button id="btn-settings">Settings</button>
-<button id="btn-save">Save Game</button>
-<button id="btn-load">Load Game</button>
+<button id="btn-save">Save / Load</button>
+<button id="btn-load">Quick Load</button>
 </div>
 <div id="settings-panel" class="menu-card hidden">
 <h2>Settings</h2>
@@ -74,8 +78,7 @@
 </div>
 </div>
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
-<script type="module" src="firebase-backend.js"></script>
+<script src="firebase-backend.js"></script>
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

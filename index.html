@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NeonBlock City</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0c1020">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="loading-screen"><div class="loading-title">NeonBlock City</div><div class="loading-sub">Streaming world...</div></div>
+<canvas id="game-canvas"></canvas>
+<div id="hud">
+<div id="hud-top-left">
+<div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
+<div class="hud-row"><span class="hud-label">XP</span><span id="hud-xp">0</span></div>
+<div class="hud-row"><span class="hud-label">Level</span><span id="hud-level">1</span></div>
+<div class="hud-row"><span class="hud-label">Wanted</span><span id="hud-wanted">0</span></div>
+<div class="hud-row"><span class="hud-label">State</span><span id="hud-online">offline</span></div>
+</div>
+<div id="hud-top-right">
+<div class="hud-row"><span class="hud-label">Vehicle</span><span id="hud-vehicle">On foot</span></div>
+<div class="hud-row"><span class="hud-label">HP</span><span id="hud-vehicle-hp">100</span></div>
+<div class="hud-row"><span class="hud-label">Gas</span><span id="hud-vehicle-gas">100</span></div>
+<div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
+</div>
+<div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
+<div id="waypoint-arrow">^</div>
+<div id="debug-overlay">
+<div>FPS: <span id="debug-fps">0</span></div>
+<div>Pos: <span id="debug-pos">0,0,0</span></div>
+<div>Chunks: <span id="debug-chunks">0</span></div>
+<div>NPCs: <span id="debug-npcs">0</span></div>
+<div>Vehicle: <span id="debug-active-vehicle">None</span></div>
+<div>Save slot: <span id="debug-save-slot">slot1</span></div>
+<div>Online: <span id="debug-online">offline</span></div>
+<div>Last error: <span id="debug-last-error">none</span></div>
+</div>
+</div>
+<div id="pause-overlay" class="hidden">
+<div class="menu-card">
+<h2>Pause</h2>
+<button id="btn-resume">Resume</button>
+<button id="btn-settings">Settings</button>
+<button id="btn-save">Save Game</button>
+<button id="btn-load">Load Game</button>
+</div>
+<div id="settings-panel" class="menu-card hidden">
+<h2>Settings</h2>
+<label>Graphics <select id="graphics-quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+<button id="btn-close-settings">Close</button>
+</div>
+<div id="mission-board" class="menu-card hidden"><h2>Mission Board</h2><ul id="mission-list"></ul><button id="btn-close-missions">Close</button></div>
+<div id="save-panel" class="menu-card hidden">
+<h2>Save / Load Slots</h2>
+<div class="slot-row"><span>Slot 1</span><button data-slot="slot1" class="btn-save-slot">Save</button><button data-slot="slot1" class="btn-load-slot">Load</button></div>
+<div class="slot-row"><span>Slot 2</span><button data-slot="slot2" class="btn-save-slot">Save</button><button data-slot="slot2" class="btn-load-slot">Load</button></div>
+<textarea id="export-json" placeholder="Exported save JSON"></textarea>
+<button id="btn-export">Export JSON</button>
+<button id="btn-import">Import JSON</button>
+<button id="btn-close-save">Close</button>
+</div>
+</div>
+<div id="reward-popup" class="hidden"></div>
+<div id="mobile-controls">
+<div id="joystick-container"><div id="joystick-base"></div><div id="joystick-stick"></div></div>
+<div id="action-rail">
+<button class="action-btn" id="btn-mobile-jump">Jump</button>
+<button class="action-btn" id="btn-mobile-sprint">Sprint</button>
+<button class="action-btn" id="btn-mobile-interact">Interact</button>
+<button class="action-btn" id="btn-mobile-unstuck">Unstuck</button>
+<button class="action-btn" id="btn-mobile-pause">Pause</button>
+</div>
+</div>
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+<script type="module" src="firebase-backend.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW failed', e); }); });
+}
+</script>
+</body>
+</html>

@@ -149,7 +149,7 @@
   document.querySelectorAll('.btn-save-slot').forEach(b => b.addEventListener('click', () => save(b.dataset.slot)));
   document.querySelectorAll('.btn-load-slot').forEach(b => b.addEventListener('click', () => load(b.dataset.slot)));
   document.getElementById('btn-export')?.addEventListener('click', () => document.getElementById('export-json').value = JSON.stringify(saveData(), null, 2));
-  document.getElementById('btn-import')?.addEventListener('click', () => { try { Object.assign(state, JSON.parse(document.getElementById('export-json').value')); popup('Imported'); } catch { popup('Import failed'); } });
+  document.getElementById('btn-import')?.addEventListener('click', () => { try { Object.assign(state, JSON.parse(document.getElementById('export-json').value)); popup('Imported'); } catch { popup('Import failed'); } });
   stream(); loading?.classList.add('hidden'); popup('Welcome to NeonBlock City');
   let frames = 0, acc = 0, fps = 0;
   function loop() { requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), .05); move(dt); renderer.render(scene, camera); frames++; acc += dt; if (acc > .5) { fps = Math.round(frames / acc); frames = 0; acc = 0; updateHud(fps); } }

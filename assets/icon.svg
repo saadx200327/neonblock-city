@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeonBlock City icon">
+  <rect width="512" height="512" rx="96" fill="#050814"/>
+  <path d="M92 388h328v44H92z" fill="#17f3ff" opacity=".75"/>
+  <rect x="120" y="164" width="76" height="224" rx="10" fill="#192050" stroke="#17f3ff" stroke-width="8"/>
+  <rect x="220" y="92" width="92" height="296" rx="10" fill="#241a52" stroke="#5ef38c" stroke-width="8"/>
+  <rect x="336" y="204" width="56" height="184" rx="10" fill="#192050" stroke="#ff3366" stroke-width="8"/>
+  <g fill="#f7f9ff">
+    <rect x="140" y="196" width="18" height="18"/><rect x="166" y="196" width="18" height="18"/><rect x="140" y="232" width="18" height="18"/><rect x="166" y="232" width="18" height="18"/>
+    <rect x="244" y="132" width="18" height="18"/><rect x="274" y="132" width="18" height="18"/><rect x="244" y="170" width="18" height="18"/><rect x="274" y="170" width="18" height="18"/>
+    <rect x="354" y="236" width="18" height="18"/><rect x="354" y="272" width="18" height="18"/>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "name": "NeonBlock City",
+  "short_name": "NeonBlock",
+  "description": "Original Roblox-inspired neon block city browser game with missions, vehicles, property ownership, and offline-ready saves.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#050814",
+  "theme_color": "#0c1020",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%23050814'/%3E%3Cpath d='M36 132h120v24H36zM48 84h24v36H48zM84 48h24v72H84zM120 66h24v54h-24z' fill='%2317f3ff'/%3E%3Cpath d='M44 132h104' stroke='%23ff4fd8' stroke-width='10'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -10,10 +10,11 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Collectible glow crates with cash, XP, level progression, and a starter crate mission.
 - Enterable neon vehicles with acceleration, steering, gas display, and a driving bonus loop.
 - Buyable glowing lots with ownership saved locally.
-- Minimap markers for crates, lots, cars, and player position.
+- NPC tip blocks that teach the player about crates, cars, and ownership.
+- Minimap markers for crates, lots, cars, NPCs, and player position.
 - Pause/save UI with save slots plus JSON import/export.
 - Unstuck button for mobile and keyboard fallback.
-- F3 debug overlay for FPS, position, chunks, streamed objects, and vehicle state.
+- F3 debug overlay for FPS, position, chunks, NPC count, save slot, cloud state, and last error.
 
 ## Controls
 
@@ -22,7 +23,8 @@ Desktop:
 - Move: `WASD` or arrow keys
 - Sprint: `Shift`
 - Jump: `Space`
-- Interact / enter car / buy lot: `E`
+- Interact / enter car / buy lot / talk to NPC: `E`
+- Mission board: `M`
 - Pause: `Esc`
 - Debug overlay: `F3`
 
@@ -34,7 +36,17 @@ Mobile:
 
 ## Save behavior
 
-The game saves progress to `localStorage` automatically, when the tab backgrounds, and when using the save buttons. `firebase-backend.js` is a safe optional adapter only; it does not include Firebase credentials and does not modify any external Firebase project.
+The game saves progress to `localStorage` automatically, when the tab backgrounds, when using the save buttons, when collecting crates, when buying lots, and when earning waypoint bonuses.
+
+`firebase-backend.js` is a safe optional adapter only. It does not include credentials and does not modify any external Firebase project. The current adapter exposes `window.NeonCloudSave.save(slot, payload)` and `window.NeonCloudSave.load(slot)` with a local fallback, so the runtime can call a cloud-like API without requiring real Firebase configuration.
+
+## Runtime stability notes
+
+- `app.js` declares the loading-screen element before hiding it so strict mode does not crash the game loop during startup.
+- HUD writes are guarded so missing optional UI nodes do not kill the runtime.
+- Save files include a versioned payload, player position/yaw/pitch, active slot, owned lots, collected pickups, mission progress, and basic error/cloud status.
+- Mobile sprint now resets on pointer up, cancel, or leave.
+- Graphics quality can reduce streamed radius/pixel ratio for weaker phones.
 
 ## Static hosting
 

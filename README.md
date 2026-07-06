@@ -5,11 +5,11 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 ## What works now
 
 - Playable third-person movement on desktop and mobile.
-- Keyboard controls: WASD / arrows to move, Shift sprint, Space jump, E interact, M missions, R unstuck, Escape pause.
-- Mobile controls: virtual joystick plus Jump, Sprint, Interact, Unstuck, and Pause buttons.
-- Streamed procedural neon city chunks to keep the world expandable without loading everything at once.
-- Pickups, NPC walkers, driveable vehicles, purchasable ownership lots, missions, XP, cash, levels, minimap, and waypoint arrow.
-- Save slots, autosave, JSON export/import, localStorage persistence, and optional Firebase bridge.
+- Keyboard controls: WASD / arrows to move, Shift sprint, Space jump, E interact, M missions, R unstuck, Escape pause, F3 debug overlay.
+- Mobile controls: virtual joystick plus Jump, Sprint, Interact, Unstuck, Pause, and canvas drag-look.
+- Streamed procedural neon city chunks with smaller mobile chunk radius and reduced mobile shadows/building density for performance.
+- Pickups, NPC walkers, driveable vehicles, purchasable ownership lots, missions, XP, cash, levels, minimap, owned-lot markers, and waypoint arrow.
+- Save slots, silent autosave, save-on-background, JSON export/import, localStorage persistence, optional Firebase bridge, persisted mission progress, owned lots, and collected pickups.
 - Static PWA files: `manifest.webmanifest` and `sw.js`.
 
 ## Local preview

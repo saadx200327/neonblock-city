@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>NeonBlock City</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0c1020">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="styles.css">
@@ -25,9 +25,10 @@
 <div class="hud-row"><span class="hud-label">Gas</span><span id="hud-vehicle-gas">100</span></div>
 <div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
 </div>
+<div id="controls-help">WASD / arrows move • Space jump • E interact • Shift sprint • Esc pause • F3 debug</div>
 <div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
 <div id="waypoint-arrow">^</div>
-<div id="debug-overlay">
+<div id="debug-overlay" class="hidden">
 <div>FPS: <span id="debug-fps">0</span></div>
 <div>Pos: <span id="debug-pos">0,0,0</span></div>
 <div>Chunks: <span id="debug-chunks">0</span></div>
@@ -42,13 +43,15 @@
 <div class="menu-card">
 <h2>Pause</h2>
 <button id="btn-resume">Resume</button>
+<button id="btn-missions">Missions</button>
 <button id="btn-settings">Settings</button>
 <button id="btn-save">Save Game</button>
 <button id="btn-load">Load Game</button>
+<p class="menu-note">Collect pickups, reach the green marker, drive vehicles, and buy glowing lots.</p>
 </div>
 <div id="settings-panel" class="menu-card hidden">
 <h2>Settings</h2>
-<label>Graphics <select id="graphics-quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+<label>Graphics <select id="graphics-quality"><option value="auto">Auto</option><option value="low">Low / mobile</option><option value="medium">Medium</option><option value="high">High</option></select></label>
 <button id="btn-close-settings">Close</button>
 </div>
 <div id="mission-board" class="menu-card hidden"><h2>Mission Board</h2><ul id="mission-list"></ul><button id="btn-close-missions">Close</button></div>
@@ -74,7 +77,6 @@
 </div>
 </div>
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
 <script type="module" src="firebase-backend.js"></script>
 <script src="app.js"></script>
 <script>

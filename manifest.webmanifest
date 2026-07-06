@@ -1,0 +1,19 @@
+{
+  "name": "NeonBlock City",
+  "short_name": "NeonBlock",
+  "description": "A Roblox-inspired original static open-world block city game.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050814",
+  "theme_color": "#0c1020",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%23050814'/%3E%3Cpath d='M38 136V56l58-30 58 30v80l-58 30-58-30Z' fill='%2317f3ff' opacity='.9'/%3E%3Cpath d='M62 124V68l34-18 34 18v56l-34 18-34-18Z' fill='%23050814'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

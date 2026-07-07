@@ -1,0 +1,157 @@
+/* NeonBlock City - static Roblox-inspired browser game runtime */
+(function(){
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const canvas = $('game-canvas');
+  const loading = $('loading-screen');
+  const hud = {
+    cash:$('hud-cash'), xp:$('hud-xp'), level:$('hud-level'), wanted:$('hud-wanted'), online:$('hud-online'),
+    vehicle:$('hud-vehicle'), hp:$('hud-vehicle-hp'), gas:$('hud-vehicle-gas'), mission:$('hud-mission'),
+    fps:$('debug-fps'), pos:$('debug-pos'), chunks:$('debug-chunks'), npcs:$('debug-npcs'), activeVehicle:$('debug-active-vehicle'),
+    saveSlot:$('debug-save-slot'), onlineDebug:$('debug-online'), lastError:$('debug-last-error'), arrow:$('waypoint-arrow'), popup:$('reward-popup')
+  };
+  const ui = { pause:$('pause-overlay'), settings:$('settings-panel'), savePanel:$('save-panel'), exportJson:$('export-json'), graphics:$('graphics-quality'), minimap:$('minimap-canvas') };
+  if (!window.THREE) {
+    hud.lastError.textContent = 'Three.js failed to load';
+    if (loading) loading.querySelector('.loading-sub').textContent = 'Three.js failed to load. Check internet/CDN.';
+    return;
+  }
+  const THREE = window.THREE;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x050814);
+  scene.fog = new THREE.FogExp2(0x050814, 0.018);
+  const camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.1, 950);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  scene.add(new THREE.HemisphereLight(0x88aaff, 0x111225, 1.35));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(30, 60, 20); sun.castShadow = true; scene.add(sun);
+  const grid = new THREE.GridHelper(1200, 120, 0x15e7ff, 0x19234f); grid.position.y = 0.01; scene.add(grid);
+  const mat = (c, opts={}) => new THREE.MeshStandardMaterial(Object.assign({ color:c, roughness:.65 }, opts));
+  const mats = {
+    player:mat(0x28f0ff,{metalness:.1}), skin:mat(0xf5d0a8), road:mat(0x11182d,{roughness:.9}), grass:mat(0x092512,{roughness:.85}),
+    neonA:mat(0x161a39,{emissive:0x1436ff,emissiveIntensity:.45}), neonB:mat(0x251236,{emissive:0xff22aa,emissiveIntensity:.35}),
+    crate:mat(0xffcc33,{emissive:0x553300,emissiveIntensity:.25}), lot:mat(0x38d9ff,{transparent:true,opacity:.18}),
+    owned:mat(0x20ff8a,{transparent:true,opacity:.4}), npc:mat(0xffef7a), car:mat(0xff3f7f,{metalness:.25})
+  };
+  const state = {
+    cash:150, xp:0, level:1, wanted:0, slot:'slot1', paused:false, lastSave:0,
+    player:{ pos:new THREE.Vector3(0,1.05,0), vel:new THREE.Vector3(), yaw:0, sprint:false, grounded:true },
+    activeVehicle:null, ownedLots:{}, crates:{}, completed:{}, activeMission:'courier'
+  };
+  const player = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1,1.35,.65), mats.player); body.position.y=.85; body.castShadow=true; player.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(.72,.72,.72), mats.skin); head.position.y=1.78; head.castShadow=true; player.add(head);
+  scene.add(player);
+
+  const keys = new Set(), chunks = new Map(), vehicles = [], npcs = [], crates = [], lots = [];
+  const chunkSize = 80, streamRadius = 2, clock = new THREE.Clock();
+  let frameCount=0, fpsTimer=0, collectorCount=0;
+  const missions = {
+    courier:{name:'Courier Run',target:new THREE.Vector3(95,0,-60),reward:120,xp:55},
+    collector:{name:'Crate Hunter',target:null,reward:90,xp:45},
+    landlord:{name:'First Property',target:new THREE.Vector3(-85,0,70),reward:180,xp:70}
+  };
+  const saveKey = (slot=state.slot) => 'neonblock-city:'+slot;
+  function err(e){ hud.lastError.textContent = (e && e.message ? e.message : String(e)).slice(0,80); }
+  function toast(msg){ hud.popup.textContent=msg; hud.popup.classList.remove('hidden'); clearTimeout(toast.t); toast.t=setTimeout(()=>hud.popup.classList.add('hidden'),1600); }
+  function setCloud(ok){ hud.online.textContent=ok?'cloud-ready':'offline'; hud.onlineDebug.textContent=hud.online.textContent; }
+  function saveData(){ return {cash:state.cash,xp:state.xp,level:state.level,wanted:state.wanted,slot:state.slot,pos:state.player.pos.toArray(),yaw:state.player.yaw,ownedLots:state.ownedLots,crates:state.crates,completed:state.completed,activeMission:state.activeMission}; }
+  function persist(slot=state.slot, quiet=false){
+    state.slot = slot;
+    const data = saveData();
+    localStorage.setItem(saveKey(slot), JSON.stringify(data));
+    state.lastSave = performance.now();
+    if (window.NeonBlockCloudSave?.save) window.NeonBlockCloudSave.save(data).then(()=>setCloud(true)).catch(err);
+    if (!quiet) toast('Saved '+slot);
+  }
+  function restore(slot=state.slot){
+    const raw = localStorage.getItem(saveKey(slot));
+    if (!raw) return false;
+    try {
+      const d = JSON.parse(raw); state.slot = slot; state.cash=d.cash??150; state.xp=d.xp??0; state.level=d.level??1; state.wanted=d.wanted??0;
+      state.ownedLots=d.ownedLots||{}; state.crates=d.crates||{}; state.completed=d.completed||{}; state.activeMission=d.activeMission||'courier';
+      state.player.pos.fromArray(d.pos||[0,1.05,0]); state.player.yaw=d.yaw||0; applyOwnership(); return true;
+    } catch(e) { err(e); return false; }
+  }
+  function exportSave(){ ui.exportJson.value = JSON.stringify(saveData(), null, 2); }
+  function importSave(){ try { const data = JSON.parse(ui.exportJson.value); localStorage.setItem(saveKey(), JSON.stringify(data)); restore(); toast('Imported save'); } catch(e) { err(e); } }
+  function hash(x,z){ let n=(x*73856093)^(z*19349663); n=(n<<13)^n; return Math.abs(1-((n*(n*n*15731+789221)+1376312589)&0x7fffffff)/1073741824); }
+  function addBox(g,size,pos,m,cast=false){ const mesh=new THREE.Mesh(new THREE.BoxGeometry(size[0],size[1],size[2]),m); mesh.position.set(pos[0],pos[1],pos[2]); mesh.castShadow=cast; mesh.receiveShadow=true; g.add(mesh); return mesh; }
+  function removeTrackedFromGroup(g){ [vehicles,npcs,crates,lots].forEach(list=>{ for(let i=list.length-1;i>=0;i--) if(list[i].parent===g) list.splice(i,1); }); }
+  function makeChunk(cx,cz){
+    const id=cx+','+cz; if(chunks.has(id)) return;
+    const g=new THREE.Group(); g.position.set(cx*chunkSize,0,cz*chunkSize); scene.add(g); chunks.set(id,g);
+    addBox(g,[chunkSize,.08,chunkSize],[0,0,0],mats.grass); addBox(g,[chunkSize,.1,10],[0,.05,0],mats.road); addBox(g,[10,.11,chunkSize],[0,.06,0],mats.road);
+    for(let i=0;i<7;i++){ const h=8+Math.floor(hash(cx*7+i,cz*5)*26), x=-32+hash(cx+i,cz)*64, z=-32+hash(cx,cz+i)*64; if(Math.abs(x)<9||Math.abs(z)<9) continue; addBox(g,[7+hash(i,cx)*7,h,7+hash(cz,i)*7],[x,h/2,z],i%2?mats.neonA:mats.neonB,true); }
+    if(Math.abs(cx)+Math.abs(cz)<6){
+      const cId='c'+id; if(!state.crates[cId]){ const crate=addBox(g,[2,2,2],[28,1.1,-28],mats.crate,true); crate.userData={type:'crate',id:cId,world:new THREE.Vector3(cx*chunkSize+28,1,cz*chunkSize-28)}; crates.push(crate); }
+      if((cx+cz)%2===0){ const npc=addBox(g,[1.2,2.2,1.2],[-25,1.1,22],mats.npc,true); npc.userData={type:'npc',tip:'Tip: buy lots, collect crates, and finish missions for faster XP.'}; npcs.push(npc); }
+      if(hash(cx,cz)>.55){ const car=addBox(g,[4,1.2,7],[18,.8,18],mats.car,true); car.userData={type:'vehicle',id:'v'+id,gas:100,hp:100}; vehicles.push(car); }
+      if(Math.abs(cx)<=1&&Math.abs(cz)<=1){ const lot=addBox(g,[18,.15,18],[-23,.15,-23],mats.lot); lot.userData={type:'lot',id:'l'+id,price:180+Math.abs(cx*cz)*90,world:new THREE.Vector3(cx*chunkSize-23,0,cz*chunkSize-23)}; lots.push(lot); }
+    }
+    applyOwnership();
+  }
+  function stream(){
+    const cx=Math.floor(state.player.pos.x/chunkSize), cz=Math.floor(state.player.pos.z/chunkSize);
+    for(let x=cx-streamRadius;x<=cx+streamRadius;x++) for(let z=cz-streamRadius;z<=cz+streamRadius;z++) makeChunk(x,z);
+    for(const [id,g] of Array.from(chunks)){ const [x,z]=id.split(',').map(Number); if(Math.abs(x-cx)>streamRadius+1||Math.abs(z-cz)>streamRadius+1){ removeTrackedFromGroup(g); scene.remove(g); chunks.delete(id); } }
+  }
+  function applyOwnership(){ lots.forEach(l=>{ if(state.ownedLots[l.userData.id]) l.material=mats.owned; }); }
+  const joy={x:0,y:0};
+  function inputVector(){ let x=0,z=0; if(keys.has('KeyW')||keys.has('ArrowUp')) z-=1; if(keys.has('KeyS')||keys.has('ArrowDown')) z+=1; if(keys.has('KeyA')||keys.has('ArrowLeft')) x-=1; if(keys.has('KeyD')||keys.has('ArrowRight')) x+=1; x+=joy.x; z+=joy.y; const mag=Math.hypot(x,z); return {x:mag?x/mag:0,z:mag?z/mag:0,active:mag>.08}; }
+  function completeMission(id){ const m=missions[id]; if(!m||state.completed[id]) return; state.cash+=m.reward; state.xp+=m.xp; state.completed[id]=true; toast('Mission complete: '+m.name); state.activeMission=id==='courier'?'collector':id==='collector'?'landlord':'courier'; persist(state.slot, true); }
+  function interact(){
+    const p=state.player.pos; let best=null,bd=9;
+    [...vehicles,...crates,...lots,...npcs].forEach(o=>{ if(!o.parent) return; const wp=o.userData.world||o.getWorldPosition(new THREE.Vector3()); const d=wp.distanceTo(p); if(d<bd){best=o;bd=d;} });
+    if(!best) return toast('Nothing nearby'); const t=best.userData.type;
+    if(t==='vehicle'){ state.activeVehicle=state.activeVehicle===best?null:best; return toast(state.activeVehicle?'Entered vehicle':'Exited vehicle'); }
+    if(t==='crate'){ state.crates[best.userData.id]=true; best.parent.remove(best); state.cash+=35; state.xp+=20; collectorCount++; toast('Crate +$35 +20XP'); if(state.activeMission==='collector'&&collectorCount>=3) completeMission('collector'); return; }
+    if(t==='lot'){ const id=best.userData.id, price=best.userData.price; if(state.ownedLots[id]) return toast('Lot already owned'); if(state.cash<price) return toast('Need $'+price); state.cash-=price; state.ownedLots[id]=true; best.material=mats.owned; toast('Lot purchased'); if(state.activeMission==='landlord') completeMission('landlord'); return; }
+    if(t==='npc') toast(best.userData.tip);
+  }
+  function updateHud(){
+    const v=state.activeVehicle; hud.cash.textContent='$'+Math.floor(state.cash); hud.xp.textContent=Math.floor(state.xp); hud.level.textContent=state.level; hud.wanted.textContent=state.wanted;
+    hud.vehicle.textContent=v?'Neon Kart':'On foot'; hud.hp.textContent=v?Math.floor(v.userData.hp):100; hud.gas.textContent=v?Math.floor(v.userData.gas):100; hud.mission.textContent=missions[state.activeMission]?.name||'None';
+    hud.pos.textContent=state.player.pos.toArray().map(n=>n.toFixed(0)).join(','); hud.chunks.textContent=chunks.size; hud.npcs.textContent=npcs.length; hud.activeVehicle.textContent=v?'Neon Kart':'None'; hud.saveSlot.textContent=state.slot;
+    const target=missions[state.activeMission]?.target; hud.arrow.style.opacity=target?1:.35; if(target){ const angle=Math.atan2(target.x-state.player.pos.x,target.z-state.player.pos.z)-state.player.yaw; hud.arrow.style.transform='rotate('+(-angle)+'rad)'; }
+  }
+  function drawMinimap(){
+    const c=ui.minimap, ctx=c.getContext('2d'), w=c.width, h=c.height; ctx.clearRect(0,0,w,h); ctx.fillStyle='#050814cc'; ctx.fillRect(0,0,w,h); ctx.strokeStyle='#17f3ff66'; ctx.beginPath(); ctx.moveTo(w/2,0); ctx.lineTo(w/2,h); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+    ctx.fillStyle='#28f0ff'; ctx.beginPath(); ctx.arc(w/2,h/2,5,0,Math.PI*2); ctx.fill();
+    const target=missions[state.activeMission]?.target; if(target){ ctx.fillStyle='#ffcc33'; ctx.beginPath(); ctx.arc(w/2+(target.x-state.player.pos.x)/4,h/2+(target.z-state.player.pos.z)/4,4,0,Math.PI*2); ctx.fill(); }
+  }
+  function update(dt){
+    if(state.paused) return; stream();
+    const iv=inputVector(); const speed=(state.activeVehicle?24:9)*(keys.has('ShiftLeft')||state.player.sprint?1.55:1);
+    if(iv.active){ state.player.yaw=Math.atan2(iv.x,iv.z); state.player.pos.x+=iv.x*speed*dt; state.player.pos.z+=iv.z*speed*dt; }
+    state.player.vel.y-=32*dt; state.player.pos.y+=state.player.vel.y*dt; if(state.player.pos.y<1.05){ state.player.pos.y=1.05; state.player.vel.y=0; state.player.grounded=true; }
+    player.position.copy(state.player.pos); player.rotation.y=state.player.yaw;
+    if(state.activeVehicle){ state.activeVehicle.position.x=state.player.pos.x-state.activeVehicle.parent.position.x; state.activeVehicle.position.z=state.player.pos.z-state.activeVehicle.parent.position.z; state.activeVehicle.rotation.y=state.player.yaw; state.activeVehicle.userData.gas=Math.max(0,state.activeVehicle.userData.gas-dt*(iv.active?0.9:0.05)); }
+    const back=new THREE.Vector3(Math.sin(state.player.yaw)*(state.activeVehicle?-16:-10),state.activeVehicle?9:6,Math.cos(state.player.yaw)*(state.activeVehicle?-16:-10)); camera.position.lerp(state.player.pos.clone().add(back),.12); camera.lookAt(state.player.pos.x,state.player.pos.y+1.2,state.player.pos.z);
+    if(state.activeMission==='courier'&&state.player.pos.distanceTo(missions.courier.target)<8) completeMission('courier');
+    const need=state.level*120; if(state.xp>=need){ state.xp-=need; state.level++; state.cash+=75; toast('Level '+state.level+' bonus +$75'); }
+    updateHud(); drawMinimap(); if(performance.now()-state.lastSave>30000) persist(state.slot, true);
+  }
+  function loop(){ const dt=Math.min(clock.getDelta(),.05); frameCount++; fpsTimer+=dt; if(fpsTimer>=.5){ hud.fps.textContent=Math.round(frameCount/fpsTimer); frameCount=0; fpsTimer=0; } update(dt); renderer.render(scene,camera); requestAnimationFrame(loop); }
+  function setPaused(v){ state.paused=v; ui.pause.classList.toggle('hidden',!v); }
+  function jump(){ if(state.player.grounded){ state.player.vel.y=12; state.player.grounded=false; } }
+  function setupMobileJoystick(){
+    const cont=$('joystick-container'), stick=$('joystick-stick'); let active=false;
+    const reset=()=>{ active=false; joy.x=0; joy.y=0; stick.style.transform='translate(0,0)'; };
+    function move(e){ if(!active) return; const r=cont.getBoundingClientRect(), dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2), dist=Math.hypot(dx,dy), max=42, len=Math.min(max,dist); if(dist<1){joy.x=0; joy.y=0; return;} joy.x=dx/max; joy.y=dy/max; stick.style.transform=`translate(${dx/dist*len}px,${dy/dist*len}px)`; }
+    cont.addEventListener('pointerdown',e=>{active=true; cont.setPointerCapture(e.pointerId); move(e);}); cont.addEventListener('pointermove',move); cont.addEventListener('pointerup',reset); cont.addEventListener('pointercancel',reset);
+  }
+  addEventListener('keydown',e=>{ keys.add(e.code); if(e.code==='Space') jump(); if(e.code==='KeyE') interact(); if(e.code==='Escape'||e.code==='KeyP') setPaused(!state.paused); if(e.code==='KeyU'){ state.player.pos.set(0,1.05,0); toast('Unstuck'); } });
+  addEventListener('keyup',e=>keys.delete(e.code));
+  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+  $('btn-mobile-jump').onclick=jump; $('btn-mobile-interact').onclick=interact; $('btn-mobile-unstuck').onclick=()=>{state.player.pos.set(0,1.05,0);toast('Unstuck');}; $('btn-mobile-pause').onclick=()=>setPaused(true);
+  $('btn-mobile-sprint').onpointerdown=()=>state.player.sprint=true; $('btn-mobile-sprint').onpointerup=()=>state.player.sprint=false;
+  $('btn-resume').onclick=()=>setPaused(false); $('btn-settings').onclick=()=>ui.settings.classList.toggle('hidden'); $('btn-close-settings').onclick=()=>ui.settings.classList.add('hidden'); $('btn-save').onclick=()=>ui.savePanel.classList.toggle('hidden'); $('btn-load').onclick=()=>{ if(!restore()) toast('No save found'); }; $('btn-close-save').onclick=()=>ui.savePanel.classList.add('hidden');
+  document.querySelectorAll('.btn-save-slot').forEach(b=>b.onclick=()=>persist(b.dataset.slot)); document.querySelectorAll('.btn-load-slot').forEach(b=>b.onclick=()=>{state.slot=b.dataset.slot; restore(state.slot)?toast('Loaded '+state.slot):toast('No save in '+state.slot);}); $('btn-export').onclick=exportSave; $('btn-import').onclick=importSave;
+  ui.graphics.onchange=()=>{ const q=ui.graphics.value; renderer.setPixelRatio(q==='low'?1:q==='high'?Math.min(devicePixelRatio,2):Math.min(devicePixelRatio,1.5)); toast('Graphics '+q); };
+  setupMobileJoystick(); restore('slot1'); stream(); setCloud(!!window.NeonBlockCloudSave); if(loading) setTimeout(()=>loading.classList.add('hidden'),350); loop();
+})();

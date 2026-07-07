@@ -1,0 +1,14 @@
+{
+  "name": "NeonBlock City",
+  "short_name": "NeonBlock",
+  "description": "A Roblox-inspired static web city game with missions, vehicles, saves, and mobile controls.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050814",
+  "theme_color": "#0c1020",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

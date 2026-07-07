@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeonBlock City icon">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17f3ff"/>
+      <stop offset="0.5" stop-color="#7d4bff"/>
+      <stop offset="1" stop-color="#ff3dac"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="92" fill="#050814"/>
+  <path d="M84 372h344v44H84z" fill="#17f3ff" opacity=".75"/>
+  <path d="M108 178h76v194h-76zM218 112h82v260h-82zM334 206h70v166h-70z" fill="url(#g)"/>
+  <path d="M132 210h26v26h-26zM132 260h26v26h-26zM132 310h26v26h-26zM246 150h26v26h-26zM246 200h26v26h-26zM246 250h26v26h-26zM358 238h24v24h-24zM358 288h24v24h-24z" fill="#050814" opacity=".9"/>
+  <path d="M80 96l48 16-48 16-16 48-16-48L0 112l48-16 16-48 16 48z" transform="translate(312 30)" fill="#ffdc5e"/>
+</svg>

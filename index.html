@@ -5,6 +5,7 @@
 <title>NeonBlock City</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0c1020">
+<meta name="description" content="NeonBlock City is an original Roblox-inspired static browser game with missions, vehicles, ownership, saves, and mobile controls.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -16,8 +17,8 @@
 <div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
 <div class="hud-row"><span class="hud-label">XP</span><span id="hud-xp">0</span></div>
 <div class="hud-row"><span class="hud-label">Level</span><span id="hud-level">1</span></div>
-<div class="hud-row"><span class="hud-label">Wanted</span><span id="hud-wanted">0</span></div>
-<div class="hud-row"><span class="hud-label">State</span><span id="hud-online">offline</span></div>
+<div class="hud-row"><span class="hud-label">Heat</span><span id="hud-wanted">0</span></div>
+<div class="hud-row"><span class="hud-label">Save</span><span id="hud-online">offline</span></div>
 </div>
 <div id="hud-top-right">
 <div class="hud-row"><span class="hud-label">Vehicle</span><span id="hud-vehicle">On foot</span></div>
@@ -43,8 +44,8 @@
 <h2>Pause</h2>
 <button id="btn-resume">Resume</button>
 <button id="btn-settings">Settings</button>
-<button id="btn-save">Save Game</button>
-<button id="btn-load">Load Game</button>
+<button id="btn-save">Save / Load</button>
+<button id="btn-load">Quick Load</button>
 </div>
 <div id="settings-panel" class="menu-card hidden">
 <h2>Settings</h2>
@@ -74,7 +75,6 @@
 </div>
 </div>
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
 <script type="module" src="firebase-backend.js"></script>
 <script src="app.js"></script>
 <script>

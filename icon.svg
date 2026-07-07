@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeonBlock City icon">
+  <rect width="512" height="512" rx="96" fill="#050814"/>
+  <path d="M78 386h356v46H78z" fill="#17f3ff" opacity=".25"/>
+  <rect x="104" y="188" width="84" height="198" rx="10" fill="#17214d" stroke="#17f3ff" stroke-width="10"/>
+  <rect x="214" y="112" width="92" height="274" rx="10" fill="#24174d" stroke="#ff38c7" stroke-width="10"/>
+  <rect x="334" y="218" width="74" height="168" rx="10" fill="#14372d" stroke="#5ef38c" stroke-width="10"/>
+  <g fill="#f7f9ff">
+    <rect x="128" y="220" width="18" height="22"/><rect x="160" y="220" width="18" height="22"/><rect x="128" y="270" width="18" height="22"/><rect x="160" y="270" width="18" height="22"/>
+    <rect x="238" y="150" width="18" height="24"/><rect x="274" y="150" width="18" height="24"/><rect x="238" y="208" width="18" height="24"/><rect x="274" y="208" width="18" height="24"/><rect x="238" y="266" width="18" height="24"/><rect x="274" y="266" width="18" height="24"/>
+    <rect x="356" y="250" width="16" height="22"/><rect x="384" y="250" width="16" height="22"/><rect x="356" y="304" width="16" height="22"/><rect x="384" y="304" width="16" height="22"/>
+  </g>
+  <circle cx="376" cy="126" r="34" fill="#ffcd38"/>
+</svg>

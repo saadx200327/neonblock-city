@@ -4,14 +4,14 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `U` unstuck, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `M` missions, `U` unstuck, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas and higher movement speed.
 - Ownership: buy purple lots with in-game cash; owned lots turn green and persist in saves.
-- Saves: local autosave, manual save slots, hidden-page backup, storage-full warning, and JSON export/import.
+- Saves: local autosave, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, and collected crate IDs.
 - Optional cloud saves: `firebase-backend.js` exposes a safe bridge only when Firebase globals are provided externally.
 
 ## Reliability fixes in this pass
@@ -25,7 +25,8 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - The active mission and active vehicle state are saved and restored when possible.
 - Vehicle gas warnings are throttled so the popup does not spam every animation frame.
 - Controls are cleared on browser blur, and the current slot is saved when the page is hidden.
-- Graphics quality now affects stream radius/building density so low mode is safer for phones.
+- Graphics quality now affects stream radius, building density, shadows, and pixel ratio so low mode is safer for phones.
+- Mission board now has a visible Pause-menu entry point plus the `M` shortcut.
 - Mission board Close now has a defensive handler even if the main runtime misses it.
 - PWA install prompt can appear from Settings when the browser allows installation.
 - WebGL context loss/restoration is surfaced through the HUD instead of failing silently.
@@ -40,13 +41,13 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, save/export, and PWA install behavior.
 
 ## Files
 
-- `index.html` - app shell and HUD.
+- `index.html` - app shell, HUD, Pause menu, Mission Board, and mobile controls.
 - `styles.css` - responsive HUD, mobile controls, pause/save panels.
-- `app.js` - playable Three.js game runtime.
+- `app.js` - playable Three.js game runtime, persistence, streaming, missions, vehicles, and graphics quality.
 - `neonblock-hardening.js` - touch, blur, backup, FPS, and gas-warning hardening.
 - `neonblock-input-polish.js` - controller input, PWA install, storage, network, and WebGL recovery polish.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.

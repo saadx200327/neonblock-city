@@ -4,7 +4,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `Ctrl/Cmd+S` quick save, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Refuel, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
@@ -39,6 +39,8 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Portrait-phone players get a rotation tip because driving and mission tracking are easier in landscape.
 - Runtime health checks flag stuck loading screens and overly heavy world/object counts through the debug HUD.
 - Economy polish adds refueling, quick save hotkey/button, passive property income, collect-income button, and HUD hints for low gas or owned-lot income.
+- Session polish adds an in-game Session Assist panel with a smoke-test checklist for movement, interaction, driving, ownership, and saving.
+- Session polish adds a Battery Saver button/hotkey that drops graphics to Low and a snapshot exporter for quick QA/debug summaries.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -49,7 +51,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, vehicle refuel, property income, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, vehicle refuel, property income, session assist, battery saver, save/export, and PWA install behavior.
 
 ## Files
 
@@ -60,5 +62,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-hardening.js` - touch, blur, backup, FPS, and gas-warning hardening.
 - `neonblock-input-polish.js` - controller input, PWA install, storage, network, and WebGL recovery polish.
 - `neonblock-economy-polish.js` - refuel controls, passive property income, quick save, and live economy HUD hints.
+- `neonblock-session-polish.js` - Session Assist checklist, mission tracking hint, Battery Saver, and QA snapshot export.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

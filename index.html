@@ -80,10 +80,10 @@
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
 <script type="module" src="firebase-backend.js"></script>
+<script src="neonblock-runtime-guard.js"></script>
 <script src="app.js"></script>
 <script src="neonblock-hardening.js"></script>
 <script src="neonblock-input-polish.js"></script>
-<script src="neonblock-runtime-guard.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
 window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW failed', e); }); });

@@ -4,7 +4,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `U` unstuck, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Unstuck, and Pause buttons.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, and first-property ownership objective.
@@ -12,6 +12,14 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Ownership: buy purple lots with in-game cash; owned lots turn green and persist in saves.
 - Saves: local autosave, manual save slots, and JSON export/import.
 - Optional cloud saves: `firebase-backend.js` exposes a safe bridge only when Firebase globals are provided externally.
+
+## Reliability fixes in this pass
+
+- Keyboard movement now resets cleanly on key release instead of inheriting a stale desktop axis.
+- Touch joystick state is separated from keyboard state so mobile and desktop inputs do not lock each other.
+- Autosave now runs on a true 15-second timer instead of firing repeatedly during the same second.
+- Streamed chunks now unregister their vehicles, crates, NPCs, and lots when unloaded so the interact scans and HUD stay fast.
+- Owned lots re-apply their green owned material after a save is loaded and nearby chunks stream back in.
 
 ## Static hosting
 

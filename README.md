@@ -4,8 +4,8 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `P` or `Esc` pause.
-- Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Refuel, Unstuck, and Pause buttons.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `K` driving assist panel, `X`/`Space` vehicle brake, `P` or `Esc` pause.
+- Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Brake, Refuel, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
@@ -14,7 +14,8 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Route Assist: a hideable wayfinding panel shows mission distance, compass direction, objective-specific hints, and nearby streamed opportunities.
 - Mobile Shell: a lightweight mobile/PWA control panel adds fullscreen, scroll-lock, larger touch targets, viewport stability hints, and double-tap zoom protection.
 - Runtime QA: a hideable QA panel runs smoke checks against the live game API, confirms chunks/interact lists/save/load hooks, exposes an emergency save button, and recovers unsafe player bounds.
-- Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, and can be refueled with cash.
+- Driving Assist: a hideable vehicle panel adds live speed/gas tips, desktop `X`/`Space` braking, a mobile Brake button, tab-hidden parking brake, and unsafe-speed stabilization for phone physics.
+- Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, braking support, and can be refueled with cash.
 - Ownership: buy purple lots with in-game cash; owned lots turn green, persist in saves, and generate passive income.
 - Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, and save-health report export.
 - Camera/map polish: Settings includes camera mode, zoom, and minimap size controls; values persist locally for repeat sessions.
@@ -54,6 +55,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Wayfinding polish adds a persistent Route Assist panel with the `G` shortcut, mission distance, compass direction, objective hints, and nearby streamed-opportunity guidance.
 - Mobile shell polish adds a `V`-toggle panel for fullscreen, scroll lock, larger touch targets, viewport jump hints, orientation recalibration, and double-tap/gesture zoom protection.
 - QA polish adds a `Q`-toggle runtime panel with a smoke-check runner, emergency save action, interact-list size guard, live chunk/object status, and secondary unsafe-bounds recovery.
+- Driving polish adds a `K`-toggle Driving Assist panel, mobile Brake button, desktop `X`/`Space` braking while in vehicles, speed/gas tips, hidden-tab parking brake, and unsafe-speed clamping for mobile stability.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -64,7 +66,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, City Objectives daily reward, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle refuel, property income, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, save-health export, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, City Objectives daily reward, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle brake `X`/`Space`, mobile Brake button, vehicle refuel, property income, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, save-health export, save/export, and PWA install behavior.
 
 ## Files
 
@@ -83,5 +85,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-wayfinding-polish.js` - Route Assist panel, mission distance, compass direction, objective hints, and nearby opportunity guidance.
 - `neonblock-mobile-shell-polish.js` - mobile fullscreen/scroll-lock panel, safe touch targets, viewport stability hints, and mobile gesture protection.
 - `neonblock-qa-polish.js` - Runtime QA panel, smoke-check runner, emergency save, live object counts, and unsafe-bounds recovery.
+- `neonblock-driving-polish.js` - Driving Assist panel, desktop/mobile braking, speed/gas tips, parking brake, and unsafe-speed stabilization.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

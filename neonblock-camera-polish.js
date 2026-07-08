@@ -44,12 +44,32 @@
       setTimeout(waitForGame, 250);
       return;
     }
+    injectRuntimeStyles();
     buildSettingsUi();
     applyCameraCss();
     applyMinimapSize();
     hookKeyboard();
     startCameraAssist();
     flash('Camera polish ready: C camera • [/] zoom • N minimap');
+  }
+
+  function injectRuntimeStyles() {
+    if ($('camera-polish-style')) return;
+    const style = document.createElement('style');
+    style.id = 'camera-polish-style';
+    style.textContent = `
+      #game-canvas {
+        transform: scale(var(--neonblock-camera-zoom, 1));
+        transform-origin: center center;
+        transition: transform 160ms ease, filter 160ms ease;
+      }
+      body[data-camera-mode="close"] #game-canvas { filter: saturate(1.08) contrast(1.04); }
+      body[data-camera-mode="cinematic"] #game-canvas { filter: saturate(1.16) contrast(1.08) brightness(0.96); }
+      #camera-mode-hint { max-width: 240px; opacity: 0.86; }
+      #camera-polish-panel input[type="range"] { width: 100%; }
+      #camera-polish-panel .settings-note { opacity: 0.76; font-size: 0.82rem; line-height: 1.35; }
+    `;
+    document.head.appendChild(style);
   }
 
   function buildSettingsUi() {
@@ -112,7 +132,8 @@
   }
 
   function applyCameraCss() {
-    document.documentElement.style.setProperty('--neonblock-camera-zoom', String(state.zoom));
+    const modeZoom = state.mode === 'close' ? state.zoom * 1.12 : state.mode === 'cinematic' ? state.zoom * 0.92 : state.zoom;
+    document.documentElement.style.setProperty('--neonblock-camera-zoom', String(clamp(modeZoom, 0.7, 1.5)));
     document.body.dataset.cameraMode = state.mode;
     const range = $('camera-zoom-range');
     const select = $('camera-mode-select');

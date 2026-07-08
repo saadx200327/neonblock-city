@@ -63,6 +63,7 @@
   scene.add(player.mesh);
 
   const input = { forward: 0, turn: 0, sprint: false, jump: false, interact: false };
+  const mobileInput = { forward: 0, turn: 0, sprint: false };
   const keys = new Set();
   const chunks = new Map();
   const vehicles = [];
@@ -82,6 +83,7 @@
   let fps = 60;
   let fpsFrames = 0;
   let fpsElapsed = 0;
+  let lastAutosave = 0;
   const minimap = $('minimap-canvas')?.getContext('2d');
 
   function box(w, h, d, material, x, y, z) {
@@ -101,6 +103,7 @@
     const key = `${cx},${cz}`;
     if (chunks.has(key)) return;
     const group = new THREE.Group();
+    group.userData.spawned = { vehicles: [], crates: [], npcs: [], lots: [] };
     const size = 48;
     const ox = cx * size;
     const oz = cz * size;
@@ -121,29 +124,50 @@
       const crate = box(1.6, 1.6, 1.6, mat.crate, ox + seeded(cx, cz, 81) * 28 - 14, 0.8, oz + seeded(cx, cz, 82) * 28 - 14);
       crate.userData.type = 'crate';
       crates.push(crate);
+      group.userData.spawned.crates.push(crate);
       group.add(crate);
     }
     if (seeded(cx, cz, 90) > 0.72) {
       const car = box(2.4, 1.1, 4, seeded(cx, cz, 91) > 0.5 ? mat.taxi : mat.car, ox + 12, 0.65, oz);
       car.userData = { type: 'vehicle', name: seeded(cx, cz, 91) > 0.5 ? 'Taxi' : 'Neon Car', hp: 100, gas: 100 };
       vehicles.push(car);
+      group.userData.spawned.vehicles.push(car);
       group.add(car);
     }
     if (seeded(cx, cz, 100) > 0.72) {
       const lot = box(9, 0.16, 9, mat.lot, ox + seeded(cx, cz, 101) * 26 - 13, 0.08, oz + seeded(cx, cz, 102) * 26 - 13);
       lot.userData = { type: 'lot', id: `lot-${cx}-${cz}`, price: 500 + Math.floor(seeded(cx, cz, 103) * 700) };
+      if (player.ownedLots[lot.userData.id]) lot.material = mat.owned;
       lots.push(lot);
+      group.userData.spawned.lots.push(lot);
       group.add(lot);
     }
     if (seeded(cx, cz, 110) > 0.78) {
       const npc = box(0.9, 1.8, 0.9, mat.npc, ox - 10, 0.9, oz + 10);
       npc.userData.phase = seeded(cx, cz, 111) * Math.PI * 2;
       npcs.push(npc);
+      group.userData.spawned.npcs.push(npc);
       group.add(npc);
     }
 
     world.add(group);
     chunks.set(key, group);
+  }
+
+  function removeFrom(list, item) {
+    const index = list.indexOf(item);
+    if (index >= 0) list.splice(index, 1);
+  }
+
+  function disposeGroup(group) {
+    for (const bucket of Object.keys(group.userData.spawned || {})) {
+      const list = bucket === 'vehicles' ? vehicles : bucket === 'crates' ? crates : bucket === 'npcs' ? npcs : lots;
+      group.userData.spawned[bucket].forEach((item) => removeFrom(list, item));
+    }
+    group.traverse((obj) => {
+      if (!obj.isMesh) return;
+      obj.geometry?.dispose?.();
+    });
   }
 
   function streamWorld() {
@@ -153,25 +177,31 @@
     for (const [key, group] of chunks) {
       const [gx, gz] = key.split(',').map(Number);
       if (Math.abs(gx - cx) > 3 || Math.abs(gz - cz) > 3) {
+        if (player.activeVehicle && group.userData.spawned?.vehicles?.includes(player.activeVehicle)) continue;
         world.remove(group);
+        disposeGroup(group);
         chunks.delete(key);
       }
     }
   }
 
   function readKeys() {
-    input.forward = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) || input.forward;
-    input.turn = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || input.turn;
-    input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || input.sprint;
+    const keyboardForward = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+    const keyboardTurn = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+    input.forward = keyboardForward || mobileInput.forward;
+    input.turn = keyboardTurn || mobileInput.turn;
+    input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || mobileInput.sprint;
     input.jump = keys.has('Space') || input.jump;
     input.interact = keys.has('KeyE') || input.interact;
   }
 
   function move(dt) {
+    const vehicleGas = player.activeVehicle?.userData.gas ?? 100;
+    const canDrive = !player.activeVehicle || vehicleGas > 0;
     const speed = (player.activeVehicle ? 17 : 7.5) * (input.sprint ? 1.45 : 1);
     yaw -= input.turn * dt * 2.6;
     const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-    if (Math.abs(input.forward) > 0.01) {
+    if (canDrive && Math.abs(input.forward) > 0.01) {
       player.vel.x += dir.x * input.forward * speed * dt * 7;
       player.vel.z += dir.z * input.forward * speed * dt * 7;
     }
@@ -191,7 +221,7 @@
       player.activeVehicle.position.y = 0.65;
       player.activeVehicle.rotation.y = yaw;
       player.activeVehicle.userData.gas = Math.max(0, player.activeVehicle.userData.gas - Math.abs(input.forward) * dt * 1.5);
-      if (player.activeVehicle.userData.gas <= 0) player.activeVehicle = null;
+      if (player.activeVehicle.userData.gas <= 0) popup('Vehicle out of gas');
     }
     input.jump = false;
   }
@@ -218,6 +248,7 @@
     const crate = nearest(crates, 4);
     if (crate) {
       crate.parent.remove(crate);
+      removeFrom(crates, crate);
       collectedCrates++;
       player.cash += 45;
       player.xp += 20;
@@ -274,7 +305,7 @@
     hud.fps.textContent = fps;
     hud.pos.textContent = `${player.mesh.position.x.toFixed(1)},${player.mesh.position.y.toFixed(1)},${player.mesh.position.z.toFixed(1)}`;
     hud.chunks.textContent = chunks.size;
-    hud.npcs.textContent = npcs.filter((n) => n.parent).length;
+    hud.npcs.textContent = npcs.length;
     hud.activeVehicle.textContent = player.activeVehicle ? player.activeVehicle.userData.name : 'None';
     hud.slot.textContent = player.slot;
     hud.onlineDebug.textContent = window.NeonBlockCloud?.enabled ? 'cloud ready' : 'local';
@@ -316,7 +347,7 @@
 
   function saveState(slot = player.slot) {
     player.slot = slot;
-    const data = { version: 2, at: Date.now(), pos: player.mesh.position.toArray(), yaw, cash: player.cash, xp: player.xp, level: player.level, wanted: player.wanted, ownedLots: player.ownedLots, completed: player.completed, collectedCrates };
+    const data = { version: 3, at: Date.now(), pos: player.mesh.position.toArray(), yaw, cash: player.cash, xp: player.xp, level: player.level, wanted: player.wanted, ownedLots: player.ownedLots, completed: player.completed, collectedCrates };
     localStorage.setItem(`neonblock:${slot}`, JSON.stringify(data));
     window.NeonBlockCloud?.save?.(slot, data).catch((e) => reportError(`cloud save failed: ${e.message}`));
     return data;
@@ -336,6 +367,7 @@
     player.ownedLots = saved.ownedLots || {};
     player.completed = saved.completed || {};
     collectedCrates = saved.collectedCrates || 0;
+    lots.forEach((lot) => { if (player.ownedLots[lot.userData.id]) lot.material = mat.owned; });
   }
 
   function wireMenus() {
@@ -366,11 +398,12 @@
   }
 
   function wireControls() {
-    addEventListener('keydown', (e) => { keys.add(e.code); if (e.code === 'KeyE') input.interact = true; });
+    addEventListener('keydown', (e) => { keys.add(e.code); if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); if (e.code === 'KeyE') input.interact = true; if (e.code === 'KeyU') { player.mesh.position.y = 4; player.vel.set(0, 0, 0); } });
     addEventListener('keyup', (e) => keys.delete(e.code));
     $('btn-mobile-jump').addEventListener('pointerdown', () => input.jump = true);
-    $('btn-mobile-sprint').addEventListener('pointerdown', () => input.sprint = true);
-    $('btn-mobile-sprint').addEventListener('pointerup', () => input.sprint = false);
+    $('btn-mobile-sprint').addEventListener('pointerdown', () => mobileInput.sprint = true);
+    $('btn-mobile-sprint').addEventListener('pointerup', () => mobileInput.sprint = false);
+    $('btn-mobile-sprint').addEventListener('pointercancel', () => mobileInput.sprint = false);
     $('btn-mobile-interact').addEventListener('pointerdown', () => input.interact = true);
     $('btn-mobile-unstuck').addEventListener('pointerdown', () => { player.mesh.position.y = 4; player.vel.set(0, 0, 0); });
     const joy = $('joystick-container');
@@ -389,10 +422,10 @@
       const sx = Math.cos(angle) * len;
       const sy = Math.sin(angle) * len;
       stick.style.transform = `translate(${sx}px, ${sy}px)`;
-      input.forward = Math.max(-1, Math.min(1, -sy / 44));
-      input.turn = Math.max(-1, Math.min(1, sx / 44));
+      mobileInput.forward = Math.max(-1, Math.min(1, -sy / 44));
+      mobileInput.turn = Math.max(-1, Math.min(1, sx / 44));
     }
-    function resetJoy() { pointer = null; input.forward = 0; input.turn = 0; stick.style.transform = 'translate(0,0)'; }
+    function resetJoy() { pointer = null; mobileInput.forward = 0; mobileInput.turn = 0; stick.style.transform = 'translate(0,0)'; }
     addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
   }
 
@@ -411,7 +444,7 @@
       npcs.forEach((npc) => { if (npc.parent) { npc.position.x += Math.sin(now * 0.001 + npc.userData.phase) * 0.012; npc.position.z += Math.cos(now * 0.001 + npc.userData.phase) * 0.012; } });
       updateMissions();
       cameraFollow();
-      if (Math.floor(now / 1000) % 15 === 0) saveState(player.slot);
+      if (now - lastAutosave > 15000) { lastAutosave = now; saveState(player.slot); }
     }
     updateHud();
     renderer.render(scene, camera);

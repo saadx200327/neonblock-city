@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neonblock-city-v15';
+const CACHE_NAME = 'neonblock-city-v16';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -21,6 +21,7 @@ const CORE_ASSETS = [
   './neonblock-mission-polish.js',
   './neonblock-property-polish.js',
   './neonblock-performance-polish.js',
+  './neonblock-progression-polish.js',
   './manifest.webmanifest',
   './icon.svg'
 ];

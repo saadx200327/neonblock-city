@@ -4,7 +4,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `K` driving assist panel, `L` mission coach, `O` property ledger, `J` performance guard, `X`/`Space` vehicle brake, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `K` driving assist panel, `L` mission coach, `O` property ledger, `J` performance guard, `Y` progression panel, `X`/`Space` vehicle brake, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Brake, Refuel, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
@@ -18,9 +18,10 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Driving Assist: a hideable vehicle panel adds live speed/gas tips, desktop `X`/`Space` braking, a mobile Brake button, tab-hidden parking brake, and unsafe-speed stabilization for phone physics.
 - Property Ledger: a hideable ownership panel tracks owned lots, nearest owned-lot distance, claimable property bonus, and copyable QA/economy report.
 - Performance Guard: a hideable adaptive FPS/world panel tracks live frame pacing, remembers best FPS, reports chunk/object load, can manually stabilize graphics, and can automatically drop quality after sustained low FPS.
+- Progression: a hideable achievement panel tracks total travel, driving distance, money/property/mission milestones, claimable cash/XP rewards, and copyable progress reports.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, braking support, and can be refueled with cash.
 - Ownership: buy purple lots with in-game cash; owned lots turn green, persist in saves, generate passive income, and feed the ledger bonus loop.
-- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, and save-health report export.
+- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, progression rewards, and save-health report export.
 - Camera/map polish: Settings includes camera mode, zoom, and minimap size controls; values persist locally for repeat sessions.
 - Optional cloud saves: `firebase-backend.js` exposes a safe bridge only when Firebase globals are provided externally.
 
@@ -62,6 +63,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Mission polish adds a `L`-toggle Mission Coach panel with mission-specific instructions, rough objective progress, best-distance memory, and automatic safe-state persistence on mission changes.
 - Property polish adds an `O`-toggle Property Ledger, owned-lot count, nearest owned-lot distance, claimable ownership bonus, save-backed cash/XP reward, and copyable ledger report for QA.
 - Performance polish adds a `J`-toggle Performance Guard panel, live FPS/best-FPS tracking, chunk/object load reporting, manual Stabilize Now action, and adaptive quality fallback for sustained low FPS.
+- Progression polish adds a `Y`-toggle achievement panel with travel/driving stat tracking, property/cash/mission milestones, cash/XP reward claiming, safe save persistence, and copyable progress reports.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -72,7 +74,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, Mission Coach `L`, City Objectives daily reward, Property Ledger `O`, Performance Guard `J`, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle brake `X`/`Space`, mobile Brake button, vehicle refuel, property income, property bonus claim/copy report, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, save-health export, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, Mission Coach `L`, City Objectives daily reward, Property Ledger `O`, Performance Guard `J`, Progression `Y`, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle brake `X`/`Space`, mobile Brake button, vehicle refuel, property income, property bonus claim/copy report, achievement reward claim/copy report, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, save-health export, save/export, and PWA install behavior.
 
 ## Files
 
@@ -95,5 +97,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-mission-polish.js` - Mission Coach panel, mission-specific instructions, objective progress hints, and best-distance memory.
 - `neonblock-property-polish.js` - Property Ledger panel, ownership summary, nearest owned-lot distance, claimable property bonus, and copyable ledger report.
 - `neonblock-performance-polish.js` - Performance Guard panel, adaptive FPS tuning, live world-load status, and manual stabilization.
+- `neonblock-progression-polish.js` - Progression panel, achievement rewards, travel/driving stats, safe reward persistence, and copyable progress reports.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

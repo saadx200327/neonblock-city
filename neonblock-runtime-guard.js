@@ -8,6 +8,7 @@
     lastFallFix: 0,
     lastHealthCheck: 0,
     warnedLandscape: false,
+    preflightComplete: false,
     booted: false
   };
 
@@ -48,9 +49,16 @@
   }
 
   function repairSavesBeforeGameLoad() {
+    if (state.preflightComplete) return false;
+    state.preflightComplete = true;
     let repaired = false;
-    for (const slot of VALID_SLOTS) repaired = quarantineCorruptSave(slot) || repaired;
-    if (repaired) popup('A corrupt save was backed up and skipped', 2600);
+    try {
+      for (const slot of VALID_SLOTS) repaired = quarantineCorruptSave(slot) || repaired;
+      if (repaired) popup('A corrupt save was backed up and skipped', 2600);
+    } catch (error) {
+      setHudError(`save preflight failed: ${error.message || error}`);
+    }
+    return repaired;
   }
 
   function currentSlot() {
@@ -116,7 +124,7 @@
 
   function watchRuntimeHealth() {
     const now = performance.now();
-    if (now - state.lastHealthCheck < 1000) return;
+    if (now - state.lastHealthCheck < 1000) return requestAnimationFrame(watchRuntimeHealth);
     state.lastHealthCheck = now;
 
     const loadingVisible = !$('loading-screen')?.classList.contains('hidden');
@@ -168,11 +176,12 @@
       addViewportGuards();
       addPageLifecycleSave();
       requestAnimationFrame(watchRuntimeHealth);
-      window.NeonBlockRuntimeGuard = { version: 1, latestUsableSave, quarantineCorruptSave };
+      window.NeonBlockRuntimeGuard = { version: 2, latestUsableSave, quarantineCorruptSave, repairSavesBeforeGameLoad };
     };
     wait();
   }
 
+  repairSavesBeforeGameLoad();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootAfterGameReady);
   else bootAfterGameReady();
 })();

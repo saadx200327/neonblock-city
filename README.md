@@ -4,11 +4,12 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `K` driving assist panel, `L` mission coach, `O` property ledger, `J` performance guard, `Y` progression panel, `Z` world safety panel, `I` PWA readiness panel, `T` cloud save panel, `X`/`Space` vehicle brake, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `C` camera mode, `[`/`]` camera zoom, `N` minimap size, `F` feedback panel, `G` route assist, `V` mobile shell panel, `Q` runtime QA panel, `K` driving assist panel, `L` mission coach, `O` property ledger, `J` performance guard, `Y` progression panel, `Z` world safety panel, `I` PWA readiness panel, `T` cloud save panel, `/` starter guide, `X`/`Space` vehicle brake, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Brake, Refuel, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
+- Starter Guide: a hideable onboarding panel tracks first movement, mission tracking, Interact use, vehicle entry, and save confirmation with a copyable tutorial QA report.
 - Mission Coach: a persistent hideable helper explains the currently tracked mission, shows rough progress/distance when available, keeps best-distance memory, and nudges players toward the right action.
 - City Objectives: a lightweight live panel shows nearby streamed opportunities, tracks daily movement/driving/property goals, and lets players claim a daily cash/XP reward.
 - Feedback polish: live interaction hints, save freshness, vehicle/gas guidance, optional sound pings, optional mobile haptics, and a hideable feedback panel.
@@ -24,7 +25,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Cloud Save: a hideable local-first cloud panel shows whether the optional Firebase bridge is active, confirms local saves, can test cloud save when Firebase is externally provided, and copies a cloud-readiness QA report without initializing Firebase itself.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, braking support, and can be refueled with cash.
 - Ownership: buy purple lots with in-game cash; owned lots turn green, persist in saves, generate passive income, and feed the ledger bonus loop.
-- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, progression rewards, stable world safety spot, PWA readiness reports, optional cloud status reports, and save-health report export.
+- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, starter-guide progress, progression rewards, stable world safety spot, PWA readiness reports, optional cloud status reports, and save-health report export.
 - Camera/map polish: Settings includes camera mode, zoom, and minimap size controls; values persist locally for repeat sessions.
 - Optional cloud saves: `firebase-backend.js` exposes a safe bridge only when Firebase globals are provided externally.
 
@@ -70,6 +71,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - World safety polish adds a `Z`-toggle recovery panel, remembers the latest stable in-world position, automatically repairs invalid/underground/far-out player positions, adds a manual Recover button, and keeps vehicle gas safe after recovery.
 - PWA polish adds an `I`-toggle readiness panel with service-worker/cache/install/runtime checks, CDN first-launch warning, save-before-update behavior, hidden-tab save protection, and a downloadable PWA QA report.
 - Cloud polish adds a `T`-toggle optional-cloud panel with local save confirmation, cloud bridge detection, cloud test action, local-only fallback messaging, and copyable cloud-readiness reports without touching Firebase setup.
+- Onboarding polish adds a `/`-toggle Starter Guide with first-run task tracking for movement, mission selection, Interact use, vehicle entry, and local-save confirmation plus a copyable tutorial QA report.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -80,7 +82,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, Mission Coach `L`, City Objectives daily reward, Property Ledger `O`, Performance Guard `J`, Progression `Y`, World Safety `Z`, PWA Ready `I`, Cloud Save `T`, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle brake `X`/`Space`, mobile Brake button, vehicle refuel, property income, property bonus claim/copy report, achievement reward claim/copy report, manual world recovery, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, PWA report export, cloud/local report copy, cloud test local fallback, service-worker update check, save-health export, save/export, and PWA install/offline behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, Starter Guide `/`, Mission Coach `L`, City Objectives daily reward, Property Ledger `O`, Performance Guard `J`, Progression `Y`, World Safety `Z`, PWA Ready `I`, Cloud Save `T`, Route Assist distance/direction, Mobile Shell `V` panel, fullscreen, scroll lock, double-tap zoom prevention, vehicle brake `X`/`Space`, mobile Brake button, vehicle refuel, property income, property bonus claim/copy report, achievement reward claim/copy report, starter tutorial copy report, manual world recovery, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, feedback prompts/sound/haptics, QA panel `Q`, smoke check, emergency save, PWA report export, cloud/local report copy, cloud test local fallback, service-worker update check, save-health export, save/export, and PWA install/offline behavior.
 
 ## Files
 
@@ -107,5 +109,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-world-safety-polish.js` - World Safety panel, stable-position memory, invalid-position recovery, and manual safe-spot restore.
 - `neonblock-pwa-polish.js` - PWA Ready panel, service-worker/cache/install checks, update helper, save-before-update behavior, and downloadable PWA QA report.
 - `neonblock-cloud-polish.js` - Cloud Save panel, optional Firebase bridge status, cloud test button, local fallback confirmation, and copyable cloud-readiness report.
+- `neonblock-onboarding-polish.js` - Starter Guide panel, first-run task checklist, tutorial progress persistence, and copyable onboarding QA report.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

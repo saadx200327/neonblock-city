@@ -29,8 +29,33 @@
   const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 900);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.6));
-  renderer.shadowMap.enabled = true;
+
+  const graphics = {
+    quality: localStorage.getItem('neonblock:graphics') || 'auto',
+    streamRadius: 2,
+    unloadRadius: 3,
+    buildings: 4,
+    pixelRatioCap: 1.6,
+    shadows: true
+  };
+
+  function applyGraphicsQuality(value = graphics.quality, rebuild = false) {
+    graphics.quality = value || 'auto';
+    localStorage.setItem('neonblock:graphics', graphics.quality);
+    const isSmallScreen = Math.min(innerWidth, innerHeight) < 720;
+    const effective = graphics.quality === 'auto' ? (isSmallScreen ? 'low' : 'medium') : graphics.quality;
+    const presets = {
+      low: { streamRadius: 1, unloadRadius: 2, buildings: 2, pixelRatioCap: 1, shadows: false },
+      medium: { streamRadius: 2, unloadRadius: 3, buildings: 4, pixelRatioCap: 1.4, shadows: true },
+      high: { streamRadius: 3, unloadRadius: 4, buildings: 5, pixelRatioCap: 1.75, shadows: true }
+    };
+    Object.assign(graphics, presets[effective] || presets.medium);
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, graphics.pixelRatioCap));
+    renderer.shadowMap.enabled = graphics.shadows;
+    if (rebuild) rebuildVisibleWorld();
+  }
+
+  applyGraphicsQuality(graphics.quality, false);
 
   scene.add(new THREE.HemisphereLight(0x8fbfff, 0x111122, 1.65));
   const sun = new THREE.DirectionalLight(0xffffff, 1.05);
@@ -70,10 +95,12 @@
   const crates = [];
   const npcs = [];
   const lots = [];
+  const collectedCrateIds = new Set();
   const missions = [
     { id: 'courier', title: 'Courier Sprint', reward: 120, xp: 45, target: new THREE.Vector3(55, 0, -50), text: 'Reach the glowing delivery zone.' },
-    { id: 'collector', title: 'Crate Collector', reward: 180, xp: 60, target: null, text: 'Collect 3 neon crates.' },
-    { id: 'owner', title: 'First Property', reward: 260, xp: 90, target: new THREE.Vector3(-48, 0, 42), text: 'Buy any purple lot.' }
+    { id: 'collector', title: 'Crate Collector', reward: 180, xp: 60, target: null, text: 'Collect 3 unique neon crates.' },
+    { id: 'owner', title: 'First Property', reward: 260, xp: 90, target: new THREE.Vector3(-48, 0, 42), text: 'Buy any purple lot.' },
+    { id: 'driver', title: 'Vehicle Delivery', reward: 220, xp: 80, target: new THREE.Vector3(-70, 0, 65), text: 'Drive any vehicle to the delivery marker.' }
   ];
   let activeMission = missions[0];
   let collectedCrates = 0;
@@ -84,12 +111,13 @@
   let fpsFrames = 0;
   let fpsElapsed = 0;
   let lastAutosave = 0;
+  let pendingActiveVehicle = null;
   const minimap = $('minimap-canvas')?.getContext('2d');
 
   function box(w, h, d, material, x, y, z) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     mesh.position.set(x, y, z);
-    mesh.castShadow = true;
+    mesh.castShadow = graphics.shadows;
     mesh.receiveShadow = true;
     return mesh;
   }
@@ -111,7 +139,7 @@
     group.add(box(size, 0.05, 7, mat.road, ox, 0.02, oz));
     group.add(box(7, 0.06, size, mat.road, ox, 0.03, oz));
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < graphics.buildings; i++) {
       const h = 5 + Math.floor(seeded(cx, cz, i + 20) * 18);
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color().setHSL(0.55 + seeded(cx, cz, i) * 0.18, 0.75, 0.25),
@@ -121,15 +149,27 @@
     }
 
     if (seeded(cx, cz, 80) > 0.67) {
-      const crate = box(1.6, 1.6, 1.6, mat.crate, ox + seeded(cx, cz, 81) * 28 - 14, 0.8, oz + seeded(cx, cz, 82) * 28 - 14);
-      crate.userData.type = 'crate';
-      crates.push(crate);
-      group.userData.spawned.crates.push(crate);
-      group.add(crate);
+      const crateId = `crate-${cx}-${cz}`;
+      if (!collectedCrateIds.has(crateId)) {
+        const crate = box(1.6, 1.6, 1.6, mat.crate, ox + seeded(cx, cz, 81) * 28 - 14, 0.8, oz + seeded(cx, cz, 82) * 28 - 14);
+        crate.userData = { type: 'crate', id: crateId };
+        crates.push(crate);
+        group.userData.spawned.crates.push(crate);
+        group.add(crate);
+      }
     }
     if (seeded(cx, cz, 90) > 0.72) {
-      const car = box(2.4, 1.1, 4, seeded(cx, cz, 91) > 0.5 ? mat.taxi : mat.car, ox + 12, 0.65, oz);
-      car.userData = { type: 'vehicle', name: seeded(cx, cz, 91) > 0.5 ? 'Taxi' : 'Neon Car', hp: 100, gas: 100 };
+      const vehicleId = `vehicle-${cx}-${cz}`;
+      const isTaxi = seeded(cx, cz, 91) > 0.5;
+      const car = box(2.4, 1.1, 4, isTaxi ? mat.taxi : mat.car, ox + 12, 0.65, oz);
+      car.userData = { type: 'vehicle', id: vehicleId, name: isTaxi ? 'Taxi' : 'Neon Car', hp: 100, gas: 100 };
+      if (pendingActiveVehicle?.id === vehicleId) {
+        car.userData.hp = pendingActiveVehicle.hp ?? car.userData.hp;
+        car.userData.gas = pendingActiveVehicle.gas ?? car.userData.gas;
+        car.position.fromArray(pendingActiveVehicle.pos || car.position.toArray());
+        player.activeVehicle = car;
+        pendingActiveVehicle = null;
+      }
       vehicles.push(car);
       group.userData.spawned.vehicles.push(car);
       group.add(car);
@@ -142,7 +182,7 @@
       group.userData.spawned.lots.push(lot);
       group.add(lot);
     }
-    if (seeded(cx, cz, 110) > 0.78) {
+    if (seeded(cx, cz, 110) > 0.78 && graphics.quality !== 'low') {
       const npc = box(0.9, 1.8, 0.9, mat.npc, ox - 10, 0.9, oz + 10);
       npc.userData.phase = seeded(cx, cz, 111) * Math.PI * 2;
       npcs.push(npc);
@@ -167,16 +207,32 @@
     group.traverse((obj) => {
       if (!obj.isMesh) return;
       obj.geometry?.dispose?.();
+      if (obj.material && !Object.values(mat).includes(obj.material)) obj.material.dispose?.();
     });
+  }
+
+  function rebuildVisibleWorld() {
+    for (const group of chunks.values()) {
+      world.remove(group);
+      disposeGroup(group);
+    }
+    chunks.clear();
+    vehicles.length = 0;
+    crates.length = 0;
+    npcs.length = 0;
+    lots.length = 0;
+    streamWorld();
   }
 
   function streamWorld() {
     const cx = Math.round(player.mesh.position.x / 48);
     const cz = Math.round(player.mesh.position.z / 48);
-    for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) spawnChunk(x, z);
+    for (let x = cx - graphics.streamRadius; x <= cx + graphics.streamRadius; x++) {
+      for (let z = cz - graphics.streamRadius; z <= cz + graphics.streamRadius; z++) spawnChunk(x, z);
+    }
     for (const [key, group] of chunks) {
       const [gx, gz] = key.split(',').map(Number);
-      if (Math.abs(gx - cx) > 3 || Math.abs(gz - cz) > 3) {
+      if (Math.abs(gx - cx) > graphics.unloadRadius || Math.abs(gz - cz) > graphics.unloadRadius) {
         if (player.activeVehicle && group.userData.spawned?.vehicles?.includes(player.activeVehicle)) continue;
         world.remove(group);
         disposeGroup(group);
@@ -247,9 +303,10 @@
     if (car) { player.activeVehicle = car; return popup(`Entered ${car.userData.name}`); }
     const crate = nearest(crates, 4);
     if (crate) {
+      collectedCrateIds.add(crate.userData.id);
       crate.parent.remove(crate);
       removeFrom(crates, crate);
-      collectedCrates++;
+      collectedCrates = collectedCrateIds.size;
       player.cash += 45;
       player.xp += 20;
       return popup('Crate collected: +$45');
@@ -282,6 +339,7 @@
     if (activeMission.id === 'courier' && !player.completed.courier && player.mesh.position.distanceTo(activeMission.target) < 7) completeMission(activeMission);
     if (activeMission.id === 'collector' && !player.completed.collector && collectedCrates >= 3) completeMission(activeMission);
     if (activeMission.id === 'owner' && !player.completed.owner && Object.keys(player.ownedLots).length) completeMission(activeMission);
+    if (activeMission.id === 'driver' && !player.completed.driver && player.activeVehicle && player.mesh.position.distanceTo(activeMission.target) < 8) completeMission(activeMission);
     const next = 100 + player.level * 80;
     if (player.xp >= next) { player.xp -= next; player.level++; popup(`Level ${player.level}`); }
   }
@@ -331,9 +389,15 @@
     }
     minimap.fillStyle = '#17f3ff';
     minimap.fillRect(77, 77, 6, 6);
+    if (player.activeVehicle) {
+      minimap.fillStyle = '#ffd338';
+      minimap.fillRect(68, 77, 5, 5);
+    }
     if (activeMission.target) {
       minimap.fillStyle = '#5ef38c';
-      minimap.fillRect(77 + (activeMission.target.x - player.mesh.position.x) * 0.5, 77 + (activeMission.target.z - player.mesh.position.z) * 0.5, 6, 6);
+      const tx = Math.max(4, Math.min(152, 77 + (activeMission.target.x - player.mesh.position.x) * 0.5));
+      const tz = Math.max(4, Math.min(152, 77 + (activeMission.target.z - player.mesh.position.z) * 0.5));
+      minimap.fillRect(tx, tz, 6, 6);
     }
   }
 
@@ -345,9 +409,36 @@
     popup.timeout = setTimeout(() => el.classList.add('hidden'), 1600);
   }
 
+  function snapshotVehicle() {
+    if (!player.activeVehicle) return null;
+    return {
+      id: player.activeVehicle.userData.id,
+      name: player.activeVehicle.userData.name,
+      hp: player.activeVehicle.userData.hp,
+      gas: player.activeVehicle.userData.gas,
+      pos: player.activeVehicle.position.toArray()
+    };
+  }
+
   function saveState(slot = player.slot) {
     player.slot = slot;
-    const data = { version: 3, at: Date.now(), pos: player.mesh.position.toArray(), yaw, cash: player.cash, xp: player.xp, level: player.level, wanted: player.wanted, ownedLots: player.ownedLots, completed: player.completed, collectedCrates };
+    const data = {
+      version: 4,
+      at: Date.now(),
+      pos: player.mesh.position.toArray(),
+      yaw,
+      cash: player.cash,
+      xp: player.xp,
+      level: player.level,
+      wanted: player.wanted,
+      ownedLots: player.ownedLots,
+      completed: player.completed,
+      activeMissionId: activeMission.id,
+      activeVehicle: snapshotVehicle(),
+      collectedCrates,
+      collectedCrateIds: Array.from(collectedCrateIds),
+      graphicsQuality: graphics.quality
+    };
     localStorage.setItem(`neonblock:${slot}`, JSON.stringify(data));
     window.NeonBlockCloud?.save?.(slot, data).catch((e) => reportError(`cloud save failed: ${e.message}`));
     return data;
@@ -366,8 +457,15 @@
     player.wanted = saved.wanted ?? 0;
     player.ownedLots = saved.ownedLots || {};
     player.completed = saved.completed || {};
-    collectedCrates = saved.collectedCrates || 0;
+    collectedCrateIds.clear();
+    (saved.collectedCrateIds || []).forEach((id) => collectedCrateIds.add(id));
+    collectedCrates = Math.max(saved.collectedCrates || 0, collectedCrateIds.size);
+    activeMission = missions.find((m) => m.id === saved.activeMissionId) || missions.find((m) => !player.completed[m.id]) || missions[0];
+    pendingActiveVehicle = saved.activeVehicle || null;
+    player.activeVehicle = null;
+    if (saved.graphicsQuality) applyGraphicsQuality(saved.graphicsQuality, false);
     lots.forEach((lot) => { if (player.ownedLots[lot.userData.id]) lot.material = mat.owned; });
+    rebuildVisibleWorld();
   }
 
   function wireMenus() {
@@ -376,24 +474,34 @@
     const saves = $('save-panel');
     const missionBoard = $('mission-board');
     const missionList = $('mission-list');
+    const graphicsSelect = $('graphics-quality');
+    const renderMissionList = () => {
+      missionList.innerHTML = missions.map((m) => `<li><button data-mission="${m.id}">${m.title}${player.completed[m.id] ? ' ✓' : ''}</button><p>${m.text}</p></li>`).join('');
+    };
     const setPause = (value) => {
       paused = value;
       overlay.classList.toggle('hidden', !value);
-      missionList.innerHTML = missions.map((m) => `<li><button data-mission="${m.id}">${m.title}</button><p>${m.text}</p></li>`).join('');
+      renderMissionList();
     };
+    if (graphicsSelect) {
+      graphicsSelect.value = graphics.quality;
+      graphicsSelect.onchange = () => { applyGraphicsQuality(graphicsSelect.value, true); popup(`Graphics: ${graphicsSelect.value}`); };
+    }
     $('btn-resume').onclick = () => setPause(false);
     $('btn-mobile-pause').onclick = () => setPause(true);
     $('btn-settings').onclick = () => settings.classList.toggle('hidden');
     $('btn-close-settings').onclick = () => settings.classList.add('hidden');
     $('btn-save').onclick = () => saves.classList.toggle('hidden');
     $('btn-load').onclick = () => saves.classList.toggle('hidden');
+    $('btn-missions')?.addEventListener('click', () => { renderMissionList(); missionBoard?.classList.toggle('hidden'); });
+    $('btn-close-missions')?.addEventListener('click', () => missionBoard?.classList.add('hidden'));
     $('btn-close-save').onclick = () => saves.classList.add('hidden');
     $('btn-export').onclick = () => { $('export-json').value = JSON.stringify(saveState(), null, 2); popup('Save exported'); };
     $('btn-import').onclick = () => { try { loadState(player.slot, JSON.parse($('export-json').value)); popup('Save imported'); } catch (e) { reportError(e.message); popup('Import failed'); } };
     document.querySelectorAll('.btn-save-slot').forEach((b) => b.onclick = () => { saveState(b.dataset.slot); popup(`Saved ${b.dataset.slot}`); });
     document.querySelectorAll('.btn-load-slot').forEach((b) => b.onclick = () => { loadState(b.dataset.slot); popup(`Loaded ${b.dataset.slot}`); });
-    document.addEventListener('keydown', (e) => { if (e.code === 'Escape' || e.code === 'KeyP') setPause(!paused); });
-    missionList.onclick = (e) => { const id = e.target?.dataset?.mission; if (id) { activeMission = missions.find((m) => m.id === id); popup(`Tracked ${activeMission.title}`); } };
+    document.addEventListener('keydown', (e) => { if (e.code === 'Escape' || e.code === 'KeyP') setPause(!paused); if (e.code === 'KeyM') { setPause(true); missionBoard?.classList.remove('hidden'); } });
+    missionList.onclick = (e) => { const id = e.target?.dataset?.mission; if (id) { activeMission = missions.find((m) => m.id === id); popup(`Tracked ${activeMission.title}`); renderMissionList(); } };
     if (missionBoard) missionBoard.classList.add('hidden');
   }
 
@@ -426,7 +534,7 @@
       mobileInput.turn = Math.max(-1, Math.min(1, sx / 44));
     }
     function resetJoy() { pointer = null; mobileInput.forward = 0; mobileInput.turn = 0; stick.style.transform = 'translate(0,0)'; }
-    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); applyGraphicsQuality(graphics.quality, false); });
   }
 
   function tick(now) {
@@ -450,11 +558,18 @@
     renderer.render(scene, camera);
   }
 
+  window.NeonBlockGame = {
+    saveState,
+    loadState,
+    applyGraphicsQuality,
+    getSnapshot: () => ({ player, chunks: chunks.size, vehicles: vehicles.length, crates: crates.length, lots: lots.length, graphics: { ...graphics } })
+  };
+
   wireControls();
   wireMenus();
   streamWorld();
   try { loadState(player.slot); } catch (e) { reportError(e.message); }
   loading?.classList.add('hidden');
-  popup('WASD/Arrows move • E interact • P pause');
+  popup('WASD/Arrows move • E interact • M missions • P pause');
   requestAnimationFrame(tick);
 })();

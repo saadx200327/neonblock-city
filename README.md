@@ -32,6 +32,11 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - WebGL context loss/restoration is surfaced through the HUD instead of failing silently.
 - Online/offline changes update the HUD while local saves continue working.
 - Reduced-motion users are nudged toward Low graphics.
+- Runtime guard now quarantines corrupt save JSON before load, keeps a recoverable corrupt-save copy, and exposes latest-good-save export/load buttons.
+- Runtime guard recovers the player if physics or imported save data drops them below the map or extremely far outside the streamed world.
+- Page lifecycle events now force a final save on `pagehide`/`freeze` for mobile browser tab switching.
+- Portrait-phone players get a rotation tip because driving and mission tracking are easier in landscape.
+- Runtime health checks flag stuck loading screens and overly heavy world/object counts through the debug HUD.
 
 ## Static hosting
 
@@ -50,5 +55,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `app.js` - playable Three.js game runtime, persistence, streaming, missions, vehicles, and graphics quality.
 - `neonblock-hardening.js` - touch, blur, backup, FPS, and gas-warning hardening.
 - `neonblock-input-polish.js` - controller input, PWA install, storage, network, and WebGL recovery polish.
+- `neonblock-runtime-guard.js` - corrupt-save quarantine, latest-good-save recovery, fall-through recovery, page lifecycle saves, and runtime health checks.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

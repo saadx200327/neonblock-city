@@ -9,6 +9,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
+- City Objectives: a lightweight live panel shows nearby streamed opportunities, tracks daily movement/driving/property goals, and lets players claim a daily cash/XP reward.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, and can be refueled with cash.
 - Ownership: buy purple lots with in-game cash; owned lots turn green, persist in saves, and generate passive income.
 - Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, and save-health report export.
@@ -44,6 +45,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Session polish adds a Battery Saver button/hotkey that drops graphics to Low and a snapshot exporter for quick QA/debug summaries.
 - Accessibility polish adds adjustable HUD scaling through Settings and `+/-`, a persistent Low Motion toggle, save-slot health reporting, and a fallback loading message if the runtime never starts.
 - Camera polish adds Settings controls and shortcuts for camera mode, zoom, and minimap sizing, plus a live camera-mode HUD hint.
+- Objective polish adds a persistent City Objectives panel, daily reward loop, nearby opportunity hints, and safe reward saving through the existing runtime API.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -54,7 +56,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, vehicle refuel, property income, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, save-health export, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, City Objectives daily reward, vehicle refuel, property income, session assist, battery saver, HUD scaling, low motion, camera mode/zoom, minimap sizing, save-health export, save/export, and PWA install behavior.
 
 ## Files
 
@@ -68,5 +70,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-session-polish.js` - Session Assist checklist, mission tracking hint, Battery Saver, and QA snapshot export.
 - `neonblock-accessibility-polish.js` - HUD scale controls, Low Motion mode, save-health reporting, and startup fallback messaging.
 - `neonblock-camera-polish.js` - camera mode/zoom controls, minimap sizing, and camera-mode HUD hint.
+- `neonblock-objective-polish.js` - City Objectives panel, daily movement/driving/property goals, nearby opportunity hints, and reward claiming.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

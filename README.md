@@ -7,7 +7,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `U` unstuck, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Unstuck, and Pause buttons.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
-- Missions: courier waypoint, crate collection, and first-property ownership objective.
+- Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas and higher movement speed.
 - Ownership: buy purple lots with in-game cash; owned lots turn green and persist in saves.
 - Saves: local autosave, manual save slots, and JSON export/import.
@@ -20,6 +20,11 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Autosave now runs on a true 15-second timer instead of firing repeatedly during the same second.
 - Streamed chunks now unregister their vehicles, crates, NPCs, and lots when unloaded so the interact scans and HUD stay fast.
 - Owned lots re-apply their green owned material after a save is loaded and nearby chunks stream back in.
+- Collected crate IDs now persist, so unloaded/reloaded chunks do not respawn already collected crates.
+- The active mission and active vehicle state are saved and restored when possible.
+- Vehicle gas warnings are throttled so the popup does not spam every animation frame.
+- Controls are cleared on browser blur, and the current slot is saved when the page is hidden.
+- Graphics quality now affects stream radius/building density so low mode is safer for phones.
 
 ## Static hosting
 

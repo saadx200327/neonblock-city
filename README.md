@@ -4,14 +4,14 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 
 ## Current gameplay
 
-- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `P` or `Esc` pause.
+- Desktop movement: `WASD` or arrow keys, `Shift` sprint, `Space` jump, `E` interact, `R` refuel, `M` missions, `U` unstuck, `H` session assist, `B` battery saver, `Ctrl/Cmd+S` quick save, `+/-` HUD scale, `P` or `Esc` pause.
 - Mobile movement: on-screen joystick plus Jump, Sprint, Interact, Refuel, Unstuck, and Pause buttons.
 - Controller support: first connected gamepad maps left stick to movement, trigger/stick press to sprint, face buttons to jump/interact/unstuck, and Start to pause.
 - Streamed neon city chunks around the player to keep the static game lighter on mobile.
 - Missions: courier waypoint, crate collection, first-property ownership, and vehicle delivery objective.
 - Vehicles: enter or exit nearby cars with Interact; vehicles have gas, higher movement speed, and can be refueled with cash.
 - Ownership: buy purple lots with in-game cash; owned lots turn green, persist in saves, and generate passive income.
-- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, and collected crate IDs.
+- Saves: local autosave, quick save, manual save slots, hidden-page backup, storage-full warning, JSON export/import, active mission, active vehicle, collected crate IDs, and save-health report export.
 - Optional cloud saves: `firebase-backend.js` exposes a safe bridge only when Firebase globals are provided externally.
 
 ## Reliability fixes in this pass
@@ -41,6 +41,7 @@ Roblox-inspired original open-world block-style browser game built with Three.js
 - Economy polish adds refueling, quick save hotkey/button, passive property income, collect-income button, and HUD hints for low gas or owned-lot income.
 - Session polish adds an in-game Session Assist panel with a smoke-test checklist for movement, interaction, driving, ownership, and saving.
 - Session polish adds a Battery Saver button/hotkey that drops graphics to Low and a snapshot exporter for quick QA/debug summaries.
+- Accessibility polish adds adjustable HUD scaling through Settings and `+/-`, a persistent Low Motion toggle, save-slot health reporting, and a fallback loading message if the runtime never starts.
 - Service worker cache now includes every runtime polish script and bumps the cache version so PWA/offline installs receive the new files.
 
 ## Static hosting
@@ -51,7 +52,7 @@ This project is intentionally static. It can be previewed locally with any stati
 python3 -m http.server 8080
 ```
 
-Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, vehicle refuel, property income, session assist, battery saver, save/export, and PWA install behavior.
+Then open the local server page in a browser and test desktop, mobile viewport, controller input, missions, vehicle refuel, property income, session assist, battery saver, HUD scaling, low motion, save-health export, save/export, and PWA install behavior.
 
 ## Files
 
@@ -63,5 +64,6 @@ Then open the local server page in a browser and test desktop, mobile viewport, 
 - `neonblock-input-polish.js` - controller input, PWA install, storage, network, and WebGL recovery polish.
 - `neonblock-economy-polish.js` - refuel controls, passive property income, quick save, and live economy HUD hints.
 - `neonblock-session-polish.js` - Session Assist checklist, mission tracking hint, Battery Saver, and QA snapshot export.
+- `neonblock-accessibility-polish.js` - HUD scale controls, Low Motion mode, save-health reporting, and startup fallback messaging.
 - `firebase-backend.js` - optional cloud-save adapter; localStorage works without Firebase.
 - `manifest.webmanifest`, `sw.js`, `icon.svg` - PWA install/offline readiness.

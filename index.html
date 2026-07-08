@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <title>NeonBlock City</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="description" content="NeonBlock City is a static neon block city browser game with missions, vehicles, ownership, local saves, optional cloud saves, and PWA support.">
 <meta name="theme-color" content="#0c1020">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<noscript>NeonBlock City needs JavaScript enabled to play.</noscript>
 <div id="loading-screen"><div class="loading-title">NeonBlock City</div><div class="loading-sub">Streaming world...</div></div>
-<canvas id="game-canvas"></canvas>
+<canvas id="game-canvas" aria-label="NeonBlock City game canvas"></canvas>
 <div id="hud">
 <div id="hud-top-left">
 <div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
@@ -25,7 +28,7 @@
 <div class="hud-row"><span class="hud-label">Gas</span><span id="hud-vehicle-gas">100</span></div>
 <div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
 </div>
-<div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
+<div id="minimap"><canvas id="minimap-canvas" width="160" height="160" aria-label="Minimap"></canvas></div>
 <div id="waypoint-arrow">^</div>
 <div id="debug-overlay">
 <div>FPS: <span id="debug-fps">0</span></div>
@@ -78,6 +81,7 @@
 <script type="module" src="firebase-backend.js"></script>
 <script src="app.js"></script>
 <script src="neonblock-hardening.js"></script>
+<script src="neonblock-input-polish.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
 window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW failed', e); }); });

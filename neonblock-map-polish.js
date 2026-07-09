@@ -49,28 +49,6 @@
     return String(value ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   }
 
-  function distance(a, b) {
-    if (!a || !b) return Infinity;
-    if (typeof a.distanceTo === 'function') return a.distanceTo(b);
-    const dx = (a.x || 0) - (b.x || 0);
-    const dy = (a.y || 0) - (b.y || 0);
-    const dz = (a.z || 0) - (b.z || 0);
-    return Math.hypot(dx, dy, dz);
-  }
-
-  function getPos(item) {
-    return item?.position || item?.mesh?.position || null;
-  }
-
-  function listNearest(items, playerPos, label, filter = () => true) {
-    if (!Array.isArray(items) || !playerPos) return [];
-    return items
-      .filter((item) => item?.parent !== null && filter(item) && getPos(item))
-      .map((item) => ({ item, label, dist: distance(getPos(item), playerPos) }))
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, 3);
-  }
-
   function missionStatus(snap) {
     const p = snap?.player;
     const missionText = document.getElementById('hud-mission')?.textContent || 'unknown';
@@ -79,13 +57,11 @@
     return { missionText, arrow, completed };
   }
 
-  function scanWorld() {
+  function scanWorld(countScan = false) {
     const snap = snapshot();
     const p = snap?.player;
     const pos = p?.mesh?.position;
     if (!snap || !p || !pos) return null;
-    const nearestCars = listNearest(Array.from(document.querySelectorAll('[data-neonblock-car]')), pos, 'car');
-    const runtimeCars = listNearest(snap.player?.activeVehicle ? [] : (snap.vehiclesList || []), pos, 'car');
     const ownedLots = p.ownedLots ? Object.keys(p.ownedLots).length : 0;
     const mission = missionStatus(snap);
     const report = {
@@ -101,11 +77,9 @@
       vehicle: p.activeVehicle?.userData?.name || 'on foot',
       mission: mission.missionText,
       completedMissions: mission.completed,
-      arrow: mission.arrow,
-      nearestRuntimeCars: runtimeCars.length,
-      nearestDomCars: nearestCars.length
+      arrow: mission.arrow
     };
-    state.scans = (state.scans || 0) + 1;
+    if (countScan) state.scans = (state.scans || 0) + 1;
     lastReport = [
       'NeonBlock Map Scanner Report',
       `time=${report.time}`,
@@ -121,9 +95,9 @@
       `mission=${report.mission}`,
       `completedMissions=${report.completedMissions}`,
       `waypointArrow=${report.arrow}`,
-      `scans=${state.scans}`
+      `manualScans=${state.scans || 0}`
     ].join('\n');
-    persist();
+    if (countScan) persist();
     return report;
   }
 
@@ -145,7 +119,7 @@
   }
 
   function copyReport() {
-    if (!lastReport) scanWorld();
+    if (!lastReport) scanWorld(true);
     navigator.clipboard?.writeText(lastReport || 'No map report yet')
       .then(() => popup('Map report copied'))
       .catch(() => popup('Map report ready'));
@@ -172,7 +146,7 @@
     document.head.appendChild(style);
     document.body.appendChild(panel);
     panel.querySelector('[data-map-close]').addEventListener('click', () => togglePanel(false));
-    panel.querySelector('[data-map-scan]').addEventListener('click', () => { scanWorld(); popup('Map scan complete'); render(); });
+    panel.querySelector('[data-map-scan]').addEventListener('click', () => { scanWorld(true); popup('Map scan complete'); render(); });
     panel.querySelector('[data-map-hub]').addEventListener('click', returnToHub);
     panel.querySelector('[data-map-save]').addEventListener('click', () => { api()?.saveState?.(); popup('Map save complete'); });
     panel.querySelector('[data-map-copy]').addEventListener('click', copyReport);
@@ -203,7 +177,7 @@
   function render() {
     ensurePanel();
     const body = panel.querySelector('[data-map-body]');
-    const report = scanWorld();
+    const report = scanWorld(false);
     if (!body || !report) {
       if (body) body.textContent = 'Runtime not ready yet.';
       return;
@@ -216,7 +190,7 @@
       <div>Ownership: ${report.ownedLots} lots • $${report.cash} • level ${report.level}</div>
       <div>Vehicle: ${safeText(report.vehicle)}</div>
       <div>Status: <span class="${crowded ? 'map-warn' : 'map-good'}">${crowded ? 'heavy world, use low graphics if laggy' : 'streaming looks stable'}</span></div>
-      <div class="map-muted">Hotkey: 9 • Use Return hub only if lost/stuck.</div>`;
+      <div class="map-muted">Hotkey: 9 • Manual scans: ${state.scans || 0} • Use Return hub only if lost/stuck.</div>`;
   }
 
   function boot() {

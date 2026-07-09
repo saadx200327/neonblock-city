@@ -5,7 +5,6 @@
   const REPORT_KEY = 'neonblock:transit-report';
   const BUTTON_ID = 'btn-mobile-transit';
   const PANEL_ID = 'neonblock-transit-panel';
-  const TOGGLE_KEY = 'Minus';
 
   const STOPS = [
     { id: 'hub', name: 'Spawn Hub', x: 0, z: 0, cost: 0, hint: 'central safe return' },
@@ -144,6 +143,7 @@
       cash: Math.floor(Number(snap?.player?.cash || 0)),
       activeVehicle: snap?.player?.activeVehicle?.userData?.name || 'none',
       chunks: snap?.chunks || 0,
+      lastReportSeen: Boolean(lastReport),
       recommendation: recommendation()
     };
     saveReport(report);
@@ -219,7 +219,7 @@
         <strong style="font-size:15px;color:#17f3ff;">Neon Transit</strong>
         <button data-transit-close style="border:0;border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.12);color:#fff;">×</button>
       </div>
-      <div style="margin-bottom:8px;color:#bfefff;">Fast travel to discovered city stops. Active vehicles are moved nearby and low gas is stabilized.</div>
+      <div style="margin-bottom:8px;color:#bfefff;">Fast travel to discovered city stops. Active vehicles are moved nearby and low gas is stabilized. Shortcut: <strong>Shift+T</strong>.</div>
       <div style="display:grid;gap:4px;margin-bottom:8px;">${STOPS.map(buttonHtml).join('')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
         <button data-transit-save>Quick Save</button>
@@ -228,6 +228,10 @@
       <div style="font-size:12px;color:#bfefff;">Stops: ${report.unlockedStops.length}/${STOPS.length} • Trips: ${report.trips} • Spent: $${report.spent}</div>
       <div style="font-size:12px;color:#8fffd2;margin-top:6px;">${recommendation()}</div>
     `;
+  }
+
+  function isTransitShortcut(event) {
+    return event.code === 'KeyT' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
   }
 
   function wirePanel() {
@@ -243,13 +247,14 @@
     });
 
     document.addEventListener('keydown', (event) => {
-      if (event.code !== TOGGLE_KEY || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!isTransitShortcut(event)) return;
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       visible = !visible;
       render(true);
-    });
+    }, true);
   }
 
   function addMobileButton() {

@@ -212,7 +212,7 @@
     button.className = 'action-btn';
     button.id = MOBILE_BUTTON_ID;
     button.type = 'button';
-    button.textContent = 'Save+':
+    button.textContent = 'Save+';
     button.addEventListener('click', () => togglePanel(true));
     rail.insertBefore(button, $('btn-mobile-pause') || null);
   }

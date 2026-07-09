@@ -11,14 +11,15 @@
     eventId: 'street-cleanup',
     startedAt: Date.now(),
     lastClaimAt: 0,
-    completed: {},
+    claimCounts: {},
     stats: { patrolMeters: 0, driveMeters: 0, cratesSeen: 0, lotsSeen: 0 },
     hidden: localStorage.getItem('neonblock:city-events-hidden') === '1'
   });
 
   function readState() {
     try {
-      return { ...defaultState(), ...(JSON.parse(localStorage.getItem(KEY) || '{}')) };
+      const stored = JSON.parse(localStorage.getItem(KEY) || '{}');
+      return { ...defaultState(), ...stored, claimCounts: stored.claimCounts || {} };
     } catch (_) {
       return defaultState();
     }
@@ -120,11 +121,15 @@
     rail.insertBefore(btn, rail.firstChild);
   }
 
+  function resetEventStats() {
+    state.startedAt = Date.now();
+    state.stats = { patrolMeters: 0, driveMeters: 0, cratesSeen: 0, lotsSeen: 0 };
+  }
+
   function rotateEvent() {
     const idx = events.findIndex((e) => e.id === state.eventId);
     state.eventId = events[(idx + 1) % events.length].id;
-    state.startedAt = Date.now();
-    state.stats = { patrolMeters: 0, driveMeters: 0, cratesSeen: 0, lotsSeen: 0 };
+    resetEventStats();
     saveState();
     render();
   }
@@ -132,14 +137,15 @@
   function claim() {
     const s = snap();
     const ev = currentEvent();
-    if (ev.progress(s) < 1 || state.completed[ev.id]) return;
+    if (ev.progress(s) < 1) return;
     const p = player(s);
     p.cash = cash(s) + ev.reward.cash;
     p.xp = xp(s) + ev.reward.xp;
-    state.completed[ev.id] = Date.now();
+    state.claimCounts[ev.id] = Number(state.claimCounts[ev.id] || 0) + 1;
     state.lastClaimAt = Date.now();
     report = buildReport(s, 'claimed');
     localStorage.setItem(REPORT_KEY, JSON.stringify(report));
+    resetEventStats();
     saveState();
     safeSave();
     rotateEvent();
@@ -152,6 +158,8 @@
       at: new Date().toISOString(),
       event: ev.title,
       progress: rnd(ev.progress(s) * 100) + '%',
+      claimsForEvent: Number(state.claimCounts[ev.id] || 0),
+      totalClaims: Object.values(state.claimCounts).reduce((sum, value) => sum + Number(value || 0), 0),
       cash: Math.floor(cash(s)),
       xp: Math.floor(xp(s)),
       chunks: s?.chunks || 0,
@@ -203,18 +211,17 @@
     const s = snap();
     const ev = currentEvent();
     const progress = Math.min(100, Math.max(0, ev.progress(s) * 100));
-    const claimed = !!state.completed[ev.id];
     report = buildReport(s, 'visible');
     panel.innerHTML = `
       <h3>City Events</h3>
       <p><strong>${ev.title}</strong></p>
       <p>${ev.goal}</p>
       <div class="bar"><div class="fill" style="width:${progress}%"></div></div>
-      <p>${rnd(progress)}% • Reward $${ev.reward.cash} / ${ev.reward.xp} XP</p>
+      <p>${rnd(progress)}% • Reward $${ev.reward.cash} / ${ev.reward.xp} XP • Claimed ${Number(state.claimCounts[ev.id] || 0)}x</p>
       <p class="muted">${ev.hint(s)}</p>
       <p class="muted">Patrol ${rnd(state.stats.patrolMeters)}m • Drive ${rnd(state.stats.driveMeters)}m • Lots ${s?.lots || 0} • Crates ${s?.crates || 0}</p>
       <div class="row">
-        <button data-action="claim" ${progress < 100 || claimed ? 'disabled' : ''}>Claim</button>
+        <button data-action="claim" ${progress < 100 ? 'disabled' : ''}>Claim</button>
         <button data-action="next">Next Event</button>
         <button data-action="save">Save</button>
         <button data-action="copy">Copy QA</button>

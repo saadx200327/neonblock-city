@@ -9,6 +9,7 @@
   let visible = state.visible ?? false;
   let lastChunkKey = '';
   let lastSavedAt = 0;
+  let lastReportSavedAt = 0;
 
   function loadState() {
     try {
@@ -112,7 +113,7 @@
       #neonblock-district-panel p{margin:8px 0 10px;color:#cfe8f2;}
       #neonblock-district-panel .nbd-actions{display:flex;gap:8px;flex-wrap:wrap;}
       #btn-mobile-district{border-color:rgba(23,243,255,.55)!important;background:rgba(23,243,255,.15)!important;}
-      @media (max-width:720px){#neonblock-district-panel{bottom:128px;font-size:12px}.nbd-grid{grid-template-columns:1fr 1fr}}
+      @media (max-width:720px){#neonblock-district-panel{bottom:128px;font-size:12px}#neonblock-district-panel .nbd-grid{grid-template-columns:1fr 1fr}}
     `;
     document.head.appendChild(style);
     return panel;
@@ -146,10 +147,10 @@
     persist(true);
   }
 
-  function report(snapshot, district) {
+  function buildReport(snapshot, district) {
     const p = snapshot?.player || {};
     const ownedLots = Object.keys(p.ownedLots || {}).length;
-    const text = [
+    return [
       'NeonBlock District Scout Report',
       `District: ${district.name}`,
       `Chunk: ${district.key}`,
@@ -163,15 +164,21 @@
       `Vehicle mode: ${p.activeVehicle ? 'driving' : 'on foot'}`,
       `Recommended next action: ${describeNextAction(snapshot)}`
     ].join('\n');
+  }
+
+  function rememberReport(text, force = false) {
     state.lastReport = text;
+    const now = Date.now();
+    if (!force && now - lastReportSavedAt < 10000) return;
+    lastReportSavedAt = now;
     try { localStorage.setItem(REPORT_KEY, text); } catch (_) {}
-    return text;
   }
 
   function copyReport() {
     const snapshot = getSnapshot();
     const district = districtFromPosition(playerPosition(snapshot));
-    const text = report(snapshot, district);
+    const text = buildReport(snapshot, district);
+    rememberReport(text, true);
     navigator.clipboard?.writeText(text).then(() => flash('District report copied')).catch(() => flash('Report saved locally'));
   }
 
@@ -221,7 +228,7 @@
     fields.chunk.textContent = district.key;
     fields.hint.textContent = describeNextAction(snapshot);
     panel.classList.toggle('hidden', !visible);
-    report(snapshot, district);
+    rememberReport(buildReport(snapshot, district), false);
     addMobileButton();
     requestAnimationFrame(tick);
   }

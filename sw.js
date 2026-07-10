@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neonblock-city-v61';
+const CACHE_NAME = 'neonblock-city-v62';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -70,8 +70,20 @@ const CORE_ASSETS = [
   './icon.svg'
 ];
 
+const REQUIRED_ASSET_COUNT = 5;
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll(CORE_ASSETS.slice(0, REQUIRED_ASSET_COUNT));
+      const results = await Promise.allSettled(
+        CORE_ASSETS.slice(REQUIRED_ASSET_COUNT).map((asset) => cache.add(asset))
+      );
+      const failures = results.filter((result) => result.status === 'rejected').length;
+      if (failures) console.warn(`[NeonBlock SW] ${failures} optional assets were not precached.`);
+      await self.skipWaiting();
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {

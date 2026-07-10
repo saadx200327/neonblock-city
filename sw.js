@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neonblock-city-v52';
+const CACHE_NAME = 'neonblock-city-v53';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const CORE_ASSETS = [
   './firebase-backend.js',
   './neonblock-runtime-guard.js',
   './neonblock-action-edge-guard.js',
+  './neonblock-input-lifecycle-guard.js',
   './neonblock-hardening.js',
   './neonblock-input-polish.js',
   './neonblock-economy-polish.js',

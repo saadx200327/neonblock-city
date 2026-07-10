@@ -3,7 +3,7 @@
 
   const STORE_KEY = 'neonblock:world-safety:v1';
   const PANEL_ID = 'world-safety-panel';
-  const SAFE_LIMIT = 1200;
+  const MAX_SAFE_COORDINATE = 250000;
   const MIN_Y = -8;
   let hidden = localStorage.getItem(`${STORE_KEY}:hidden`) === '1';
   let lastFixAt = 0;
@@ -45,7 +45,7 @@
   function rememberStableSpot(snap) {
     const pos = snap?.player?.mesh?.position;
     if (!pos || !finite(pos.x) || !finite(pos.y) || !finite(pos.z)) return;
-    if (pos.y < 0.8 || Math.abs(pos.x) > SAFE_LIMIT || Math.abs(pos.z) > SAFE_LIMIT) return;
+    if (pos.y < 0.8 || Math.abs(pos.x) > MAX_SAFE_COORDINATE || Math.abs(pos.z) > MAX_SAFE_COORDINATE) return;
     stableSpot = { x: pos.x, y: Math.max(1, pos.y), z: pos.z, at: Date.now() };
     try {
       localStorage.setItem(`${STORE_KEY}:stable`, JSON.stringify(stableSpot));
@@ -93,7 +93,7 @@
     if (!pos) return 'missing position';
     if (!finite(pos.x) || !finite(pos.y) || !finite(pos.z)) return 'invalid position';
     if (pos.y < MIN_Y) return 'below city';
-    if (Math.abs(pos.x) > SAFE_LIMIT || Math.abs(pos.z) > SAFE_LIMIT) return 'outside streamed city';
+    if (Math.abs(pos.x) > MAX_SAFE_COORDINATE || Math.abs(pos.z) > MAX_SAFE_COORDINATE) return 'coordinate precision limit';
     return '';
   }
 
@@ -175,7 +175,12 @@
     updatePanel();
   });
 
-  window.NeonBlockWorldSafety = { recover, scan, getStableSpot: () => loadStableSpot() };
+  window.NeonBlockWorldSafety = {
+    recover,
+    scan,
+    getStableSpot: () => loadStableSpot(),
+    getStatus: () => ({ maxSafeCoordinate: MAX_SAFE_COORDINATE, lastFixAt, lastReport })
+  };
 
   const boot = setInterval(() => {
     if (!game()?.getSnapshot) return;

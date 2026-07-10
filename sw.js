@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v67`;
+const CACHE_NAME = `${CACHE_PREFIX}v68`;
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const CORE_ASSETS = [
   './neonblock-viewport-recovery-polish.js',
   './neonblock-startup-recovery-polish.js',
   './neonblock-editable-input-guard.js',
+  './neonblock-pause-input-guard.js',
   './neonblock-mobile-pointer-guard.js',
   './neonblock-hardening.js',
   './neonblock-input-polish.js',

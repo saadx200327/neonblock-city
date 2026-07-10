@@ -29,6 +29,7 @@
   const state = loadState();
   let lastMission = '';
   let lastSnapshotAt = 0;
+  let lastMissionRepairAt = 0;
 
   function loadState() {
     try {
@@ -73,6 +74,7 @@
       #${PANEL_ID} .mission-polish-bar { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, #17f3ff, #5ef38c); transition: width 180ms ease; }
       #${PANEL_ID} .mission-polish-muted { color: rgba(233,251,255,0.72); }
       #${PANEL_ID} .mission-polish-hotkeys { color: rgba(233,251,255,0.62); font-size: 11px; }
+      #mission-list button[aria-disabled="true"] { opacity: 0.58; cursor: not-allowed; }
       @media (max-width: 720px) {
         #${PANEL_ID} { bottom: max(188px, calc(170px + env(safe-area-inset-bottom))); width: min(280px, calc(100vw - 20px)); }
       }
@@ -134,6 +136,55 @@
     return 'unknown';
   }
 
+  function showNotice(text) {
+    const popup = el('reward-popup');
+    if (!popup) return;
+    popup.textContent = text;
+    popup.classList.remove('hidden');
+    clearTimeout(showNotice.timeout);
+    showNotice.timeout = setTimeout(() => popup.classList.add('hidden'), 1600);
+  }
+
+  function annotateMissionButtons(completed = {}) {
+    const list = el('mission-list');
+    if (!list) return;
+    list.querySelectorAll('button[data-mission]').forEach((button) => {
+      const done = Boolean(completed[button.dataset.mission]);
+      button.setAttribute('aria-disabled', String(done));
+      button.title = done ? 'Mission already completed' : 'Track this mission';
+    });
+  }
+
+  function ensureMissionButtonsRendered() {
+    const list = el('mission-list');
+    if (!list || list.querySelector('button[data-mission]')) return list;
+    const toggle = el('btn-missions');
+    const board = el('mission-board');
+    if (!toggle || !board) return list;
+    const wasHidden = board.classList.contains('hidden');
+    toggle.click();
+    if (board.classList.contains('hidden') !== wasHidden) toggle.click();
+    return list;
+  }
+
+  function repairCompletedMission(snapshot, missionId) {
+    const completed = snapshot?.player?.completed || {};
+    annotateMissionButtons(completed);
+    if (!completed[missionId]) return false;
+
+    const nextMissionId = Object.keys(MISSION_TEXT).find((id) => !completed[id]);
+    if (!nextMissionId) return false;
+    if (performance.now() - lastMissionRepairAt < 1200) return false;
+
+    lastMissionRepairAt = performance.now();
+    const list = ensureMissionButtonsRendered();
+    const nextButton = list?.querySelector(`button[data-mission="${nextMissionId}"]`);
+    if (!nextButton) return false;
+    nextButton.click();
+    showNotice(`Completed mission skipped • Tracking ${MISSION_TEXT[nextMissionId].title}`);
+    return true;
+  }
+
   function distanceToKnownTarget(missionId, position) {
     const targets = {
       courier: { x: 55, z: -50, radius: 7 },
@@ -153,7 +204,9 @@
     const player = snapshot.player;
     const pos = player.mesh?.position;
     if (missionId === 'collector') {
-      const collected = Math.max(0, Number(player?.completed?.collector ? 3 : JSON.parse(localStorage.getItem('neonblock:slot1') || '{}')?.collectedCrates || 0));
+      let savedCrates = 0;
+      try { savedCrates = JSON.parse(localStorage.getItem(`neonblock:${player.slot || 'slot1'}`) || '{}')?.collectedCrates || 0; } catch (_) {}
+      const collected = Math.max(0, Number(player?.completed?.collector ? 3 : savedCrates));
       return { text: `${Math.min(3, collected)}/3 crates tracked`, percent: Math.min(1, collected / 3) };
     }
     if (missionId === 'owner') {
@@ -173,9 +226,16 @@
     const panel = ensurePanel();
     const missionName = getMissionName();
     const missionId = getMissionId(missionName);
-    const info = MISSION_TEXT[missionId] || { title: missionName || 'Current Mission', hint: 'Use M to pick a mission and E/Interact near objects.', action: 'Keep moving to stream more city blocks.' };
     const snapshot = getSnapshot();
-    const progress = progressFor(missionId, snapshot);
+    const completed = snapshot?.player?.completed || {};
+
+    if (repairCompletedMission(snapshot, missionId)) return;
+
+    const allComplete = Object.keys(MISSION_TEXT).every((id) => completed[id]);
+    const info = allComplete
+      ? { title: 'All Missions Complete', hint: 'Every core city mission is complete.', action: 'Keep exploring, collecting, driving, and expanding your property portfolio.' }
+      : (MISSION_TEXT[missionId] || { title: missionName || 'Current Mission', hint: 'Use M to pick a mission and E/Interact near objects.', action: 'Keep moving to stream more city blocks.' });
+    const progress = allComplete ? { text: '4/4 complete', percent: 1 } : progressFor(missionId, snapshot);
 
     if (missionName && missionName !== lastMission) {
       lastMission = missionName;
@@ -206,6 +266,16 @@
     if (event.code === 'KeyL' && !event.repeat) togglePanel();
   });
 
+  document.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('#mission-list button[data-mission]');
+    if (!button) return;
+    const completed = getSnapshot()?.player?.completed || {};
+    if (!completed[button.dataset.mission]) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    showNotice('That mission is already complete');
+  }, true);
+
   window.addEventListener('neonblock:objective:claimed', () => {
     try { window.NeonBlockGame?.saveState?.(); } catch (_) {}
   });
@@ -214,6 +284,19 @@
     ensurePanel();
     setInterval(updateCoach, 700);
     updateCoach();
+  };
+
+  window.NeonBlockMissionPolish = {
+    getStatus: () => {
+      const snapshot = getSnapshot();
+      const missionId = getMissionId(getMissionName());
+      return {
+        missionId,
+        completed: { ...(snapshot?.player?.completed || {}) },
+        activeMissionAlreadyCompleted: Boolean(snapshot?.player?.completed?.[missionId])
+      };
+    },
+    repair: () => repairCompletedMission(getSnapshot(), getMissionId(getMissionName()))
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

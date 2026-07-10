@@ -27,7 +27,11 @@
   function resetJoystick() {
     activePointers.clear();
     if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
-    joystick.dispatchEvent(new PointerEvent('pointercancel', {
+
+    // Use pointerup rather than recursively dispatching pointercancel. The core
+    // handler resets movement for both events, while pointerup is safe when this
+    // reset originated from a captured global pointercancel.
+    joystick.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: false,
       pointerId: 0,
       pointerType: 'touch'

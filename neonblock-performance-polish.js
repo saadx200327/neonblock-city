@@ -10,6 +10,7 @@
   let highFpsSeconds = 0;
   let lastAppliedAt = 0;
   let lastFps = 0;
+  let ignoredHiddenFrames = 0;
   let panel;
 
   function readState() {
@@ -92,6 +93,7 @@
     });
     panel.querySelector('[data-perf="adaptive"]').addEventListener('click', () => {
       state.adaptive = !state.adaptive;
+      resetSampling();
       saveState();
       render();
       toast(`Adaptive performance ${state.adaptive ? 'on' : 'off'}`);
@@ -121,6 +123,8 @@
   }
 
   function adviceText(snap, quality) {
+    if (document.hidden) return 'Performance sampling is paused while the game is in the background.';
+    if (!snap) return 'Waiting for the game world before adaptive tuning starts...';
     if (!lastFps) return 'Measuring live frame pacing...';
     if (lastFps < 24) return 'Low FPS detected. Guard will drop graphics if this continues.';
     if ((snap?.chunks || 0) > 35) return 'High chunk count. Move slower or use Low graphics on mobile.';
@@ -128,12 +132,26 @@
     return 'Frame pacing looks playable.';
   }
 
+  function resetSampling() {
+    frames = 0;
+    elapsed = 0;
+    last = performance.now();
+    lastFps = 0;
+    lowFpsSeconds = 0;
+    highFpsSeconds = 0;
+  }
+
   function maybeTune(dt) {
-    if (!state.adaptive) return;
+    if (!state.adaptive || document.hidden) return;
+    const snap = snapshot();
+    if (!snap) {
+      lowFpsSeconds = 0;
+      highFpsSeconds = 0;
+      return;
+    }
     const now = performance.now();
     if (now - lastAppliedAt < 20000) return;
-    const snap = snapshot();
-    const quality = snap?.graphics?.quality || state.lastQuality || 'auto';
+    const quality = snap.graphics?.quality || state.lastQuality || 'auto';
     if (lastFps && lastFps < 24) {
       lowFpsSeconds += dt;
       highFpsSeconds = 0;
@@ -154,6 +172,12 @@
   }
 
   function loop(now) {
+    if (document.hidden) {
+      ignoredHiddenFrames += 1;
+      last = now;
+      requestAnimationFrame(loop);
+      return;
+    }
     const dt = Math.min(0.25, (now - last) / 1000 || 0);
     last = now;
     frames += 1;
@@ -172,6 +196,11 @@
     requestAnimationFrame(loop);
   }
 
+  document.addEventListener('visibilitychange', () => {
+    resetSampling();
+    render();
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyJ' || event.repeat) return;
     state.hidden = !state.hidden;
@@ -180,8 +209,24 @@
     toast(`Performance Guard ${state.hidden ? 'hidden' : 'shown'}`);
   });
 
+  window.NeonBlockPerformancePolish = {
+    getStatus: () => ({
+      version: 2,
+      adaptive: state.adaptive,
+      lastFps,
+      bestFps: state.bestFps,
+      lowFpsSeconds,
+      highFpsSeconds,
+      ignoredHiddenFrames,
+      documentHidden: document.hidden,
+      gameReady: Boolean(snapshot())
+    }),
+    resetSampling
+  };
+
   window.addEventListener('load', () => {
     createPanel();
+    resetSampling();
     requestAnimationFrame(loop);
   });
 })();

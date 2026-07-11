@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v71`;
+const CACHE_NAME = `${CACHE_PREFIX}v72`;
 const CORE_ASSETS = [
   './',
   './index.html',

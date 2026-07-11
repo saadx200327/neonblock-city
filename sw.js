@@ -1,5 +1,6 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v89`;
+const CACHE_VERSION = 'v90';
+const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
   './',
@@ -108,6 +109,22 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+self.addEventListener('message', (event) => {
+  const type = event.data?.type;
+  if (type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
+  if (type === 'NEONBLOCK_SW_STATUS') {
+    event.source?.postMessage?.({
+      type: 'NEONBLOCK_SW_STATUS',
+      cacheName: CACHE_NAME,
+      version: CACHE_VERSION
+    });
+  }
+});
+
 async function cachedAppShell() {
   return (await caches.match('./index.html')) || (await caches.match('./'));
 }
@@ -123,9 +140,16 @@ async function trimRuntimeCache(cache) {
   await Promise.all(removable.slice(0, overflow).map((request) => cache.delete(request)));
 }
 
+function isCacheableResponse(response) {
+  if (!response || !response.ok || response.type === 'opaque') return false;
+  const cacheControl = response.headers.get('Cache-Control') || '';
+  return !/\bno-store\b/i.test(cacheControl);
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
+  if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return;
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
@@ -157,7 +181,7 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
 
       return fetch(request).then((response) => {
-        if (!response || !response.ok || response.type === 'opaque') return response;
+        if (!isCacheableResponse(response)) return response;
 
         const requestUrl = new URL(request.url);
         if (requestUrl.origin === self.location.origin) {

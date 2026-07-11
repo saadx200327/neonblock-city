@@ -5,6 +5,14 @@
   const BACKUP_PREFIX = 'neonblock:backup:';
   const QUARANTINE_PREFIX = 'neonblock:quarantine:';
   const VALID_SLOTS = new Set(['slot1', 'slot2']);
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    quarantinedSaves: 0,
+    restoredBackups: 0,
+    lastError: ''
+  };
 
   function notify(message) {
     const popup = document.getElementById('reward-popup');
@@ -13,6 +21,33 @@
     popup.classList.remove('hidden');
     clearTimeout(notify.timer);
     notify.timer = setTimeout(() => popup.classList.add('hidden'), 2400);
+  }
+
+  function recordStorageError(error, operation) {
+    const message = `${operation}: ${error?.message || error || 'storage unavailable'}`;
+    diagnostics.lastError = message;
+    console.warn('[NeonBlock Save Resilience]', message);
+  }
+
+  function readStorage(key) {
+    try {
+      return { ok: true, value: localStorage.getItem(key) };
+    } catch (error) {
+      diagnostics.storageReadFailures++;
+      recordStorageError(error, `Read ${key}`);
+      return { ok: false, reason: 'Browser storage is unavailable' };
+    }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return { ok: true };
+    } catch (error) {
+      diagnostics.storageWriteFailures++;
+      recordStorageError(error, `Write ${key}`);
+      return { ok: false, reason: 'Browser storage is unavailable or full' };
+    }
   }
 
   function isFiniteVector(value) {
@@ -33,7 +68,9 @@
 
   function parseSlot(slot) {
     const key = SAVE_PREFIX + slot;
-    const raw = localStorage.getItem(key);
+    const stored = readStorage(key);
+    if (!stored.ok) return { ok: false, reason: stored.reason };
+    const raw = stored.value;
     if (!raw) return { ok: false, reason: 'No save exists in this slot' };
     try {
       const data = JSON.parse(raw);
@@ -45,30 +82,32 @@
   }
 
   function quarantine(slot, result) {
-    if (!result.raw) return;
+    if (!result.raw) return { ok: false, reason: 'No corrupt save payload to preserve' };
     const key = `${QUARANTINE_PREFIX}${slot}:${Date.now()}`;
-    try { localStorage.setItem(key, result.raw); } catch (_) {}
+    const stored = writeStorage(key, result.raw);
+    if (stored.ok) diagnostics.quarantinedSaves++;
+    return stored;
   }
 
   function backup(slot) {
     const result = parseSlot(slot);
     if (!result.ok) return result;
-    try {
-      localStorage.setItem(BACKUP_PREFIX + slot, result.raw);
-      return result;
-    } catch (error) {
-      return { ok: false, reason: `Backup failed: ${error.message}` };
-    }
+    const stored = writeStorage(BACKUP_PREFIX + slot, result.raw);
+    return stored.ok ? result : stored;
   }
 
   function restoreBackup(slot) {
-    const raw = localStorage.getItem(BACKUP_PREFIX + slot);
+    const stored = readStorage(BACKUP_PREFIX + slot);
+    if (!stored.ok) return stored;
+    const raw = stored.value;
     if (!raw) return { ok: false, reason: 'No healthy backup is available' };
     try {
       const data = JSON.parse(raw);
       const reason = validateSave(data);
       if (reason) return { ok: false, reason };
-      localStorage.setItem(SAVE_PREFIX + slot, raw);
+      const restored = writeStorage(SAVE_PREFIX + slot, raw);
+      if (!restored.ok) return restored;
+      diagnostics.restoredBackups++;
       return { ok: true };
     } catch (error) {
       return { ok: false, reason: error.message };
@@ -87,12 +126,16 @@
     }
     event.preventDefault();
     event.stopImmediatePropagation();
-    quarantine(slot, result);
+    const preserved = quarantine(slot, result);
     const restored = restoreBackup(slot);
     if (restored.ok) {
       notify(`${slot} was damaged; restored the last healthy backup. Tap Load again.`);
+    } else if (result.reason === 'Browser storage is unavailable') {
+      notify('Browser storage is unavailable. Your current game remains open, but this slot cannot load.');
     } else {
-      notify(`${slot} could not load safely. Corrupt data was preserved for recovery.`);
+      notify(preserved.ok
+        ? `${slot} could not load safely. Corrupt data was preserved for recovery.`
+        : `${slot} could not load safely, and browser storage could not preserve a recovery copy.`);
       console.warn('[NeonBlock Save Resilience]', result.reason, restored.reason);
     }
   }, true);
@@ -109,12 +152,18 @@
   });
 
   window.addEventListener('pagehide', () => {
-    VALID_SLOTS.forEach((slot) => backup(slot));
+    VALID_SLOTS.forEach((slot) => {
+      const result = backup(slot);
+      if (!result.ok && result.reason !== 'No save exists in this slot') {
+        console.warn('[NeonBlock Save Resilience] Exit backup skipped:', slot, result.reason);
+      }
+    });
   });
 
   window.NeonBlockSaveResilience = {
     validateSave,
     inspect: (slot) => VALID_SLOTS.has(slot) ? parseSlot(slot) : { ok: false, reason: 'Unknown slot' },
-    restoreBackup: (slot) => VALID_SLOTS.has(slot) ? restoreBackup(slot) : { ok: false, reason: 'Unknown slot' }
+    restoreBackup: (slot) => VALID_SLOTS.has(slot) ? restoreBackup(slot) : { ok: false, reason: 'Unknown slot' },
+    getStatus: () => ({ ...diagnostics })
   };
 })();

@@ -6,11 +6,13 @@
   const joystickStick = document.getElementById('joystick-stick');
   if (!sprintButton || !joystick) return;
 
-  const activePointers = new Set();
   let sprintPointer = null;
+  let joystickPointer = null;
+  let blockedJoystickPointers = 0;
 
   function releaseSprint(pointerId = null) {
     if (pointerId !== null && sprintPointer !== pointerId) return;
+    const releasedPointer = sprintPointer ?? pointerId ?? 0;
     sprintPointer = null;
     sprintButton.classList.remove('is-held');
     sprintButton.setAttribute('aria-pressed', 'false');
@@ -19,27 +21,29 @@
     // synthetic release when the browser ends the gesture outside the button.
     sprintButton.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: false,
-      pointerId: pointerId ?? 0,
+      pointerId: releasedPointer,
       pointerType: 'touch'
     }));
   }
 
-  function resetJoystick() {
-    activePointers.clear();
-    if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
+  function releaseJoystick(pointerId = null) {
+    if (pointerId !== null && joystickPointer !== pointerId) return;
+    const releasedPointer = joystickPointer ?? pointerId ?? 0;
 
-    // Use pointerup rather than recursively dispatching pointercancel. The core
-    // handler resets movement for both events, while pointerup is safe when this
-    // reset originated from a captured global pointercancel.
+    // Keep the owner set while dispatching so capture-phase ownership checks
+    // allow the core game's reset handler to receive this synthetic release.
     joystick.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: false,
-      pointerId: 0,
+      pointerId: releasedPointer,
       pointerType: 'touch'
     }));
+    joystickPointer = null;
+    if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
   }
 
   sprintButton.setAttribute('aria-pressed', 'false');
   sprintButton.addEventListener('pointerdown', (event) => {
+    if (sprintPointer !== null && sprintPointer !== event.pointerId) return;
     sprintPointer = event.pointerId;
     sprintButton.classList.add('is-held');
     sprintButton.setAttribute('aria-pressed', 'true');
@@ -53,32 +57,59 @@
       sprintButton.setAttribute('aria-pressed', 'false');
     }
   }, { passive: true });
-  sprintButton.addEventListener('pointercancel', () => releaseSprint(), { passive: true });
-  sprintButton.addEventListener('lostpointercapture', () => releaseSprint(), { passive: true });
+  sprintButton.addEventListener('pointercancel', (event) => releaseSprint(event.pointerId), { passive: true });
+  sprintButton.addEventListener('lostpointercapture', (event) => releaseSprint(event.pointerId), { passive: true });
 
-  joystick.addEventListener('pointerdown', (event) => activePointers.add(event.pointerId), { passive: true });
-  joystick.addEventListener('pointerup', (event) => activePointers.delete(event.pointerId), { passive: true });
-  joystick.addEventListener('pointercancel', (event) => activePointers.delete(event.pointerId), { passive: true });
-  joystick.addEventListener('lostpointercapture', resetJoystick, { passive: true });
+  // The core joystick uses a single pointer variable. Capture-phase ownership
+  // prevents a second finger from overwriting that pointer or releasing the
+  // first finger's movement before the core bubble listeners run.
+  joystick.addEventListener('pointerdown', (event) => {
+    if (joystickPointer === null) {
+      joystickPointer = event.pointerId;
+      return;
+    }
+    if (joystickPointer !== event.pointerId) {
+      blockedJoystickPointers++;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, { capture: true, passive: false });
+
+  ['pointermove', 'pointerup', 'pointercancel'].forEach((type) => {
+    joystick.addEventListener(type, (event) => {
+      if (joystickPointer !== null && joystickPointer !== event.pointerId) {
+        blockedJoystickPointers++;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, { capture: true, passive: false });
+  });
+
+  joystick.addEventListener('pointerup', (event) => {
+    if (joystickPointer === event.pointerId) joystickPointer = null;
+  }, { passive: true });
+  joystick.addEventListener('pointercancel', (event) => {
+    if (joystickPointer === event.pointerId) joystickPointer = null;
+  }, { passive: true });
+  joystick.addEventListener('lostpointercapture', (event) => releaseJoystick(event.pointerId), { passive: true });
 
   window.addEventListener('pointerup', (event) => {
-    if (sprintPointer === event.pointerId) releaseSprint(event.pointerId);
-    activePointers.delete(event.pointerId);
+    if (sprintPointer === event.pointerId && event.target !== sprintButton) releaseSprint(event.pointerId);
+    if (joystickPointer === event.pointerId && !joystick.contains(event.target)) releaseJoystick(event.pointerId);
   }, true);
   window.addEventListener('pointercancel', (event) => {
     if (sprintPointer === event.pointerId) releaseSprint(event.pointerId);
-    activePointers.delete(event.pointerId);
-    if (!activePointers.size) resetJoystick();
+    if (joystickPointer === event.pointerId) releaseJoystick(event.pointerId);
   }, true);
   window.addEventListener('blur', () => {
     releaseSprint();
-    resetJoystick();
+    releaseJoystick();
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       releaseSprint();
-      resetJoystick();
+      releaseJoystick();
     }
   });
 
@@ -88,14 +119,16 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
+    version: 2,
     getStatus: () => ({
       sprintPointer,
-      joystickPointers: activePointers.size,
+      joystickPointer,
+      blockedJoystickPointers,
       installed: true
     }),
     releaseAll: () => {
       releaseSprint();
-      resetJoystick();
+      releaseJoystick();
     }
   };
 })();

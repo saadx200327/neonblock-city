@@ -7,6 +7,7 @@
   const MOBILE_BUTTON_ID = 'btn-mobile-daily';
   const OPEN_KEY = 'neonblock:daily-bonus-open';
   const DAY_MS = 86400000;
+  const RENDER_INTERVAL_MS = 5000;
 
   const DEFAULT_STATE = {
     streak: 0,
@@ -19,11 +20,22 @@
     report: null
   };
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    renderCount: 0,
+    pausedForVisibility: document.hidden,
+    timerActive: false,
+    lastError: null
+  };
+
   const state = loadState();
   let panel;
   let statusEl;
   let rewardEl;
   let reportEl;
+  let renderTimer = 0;
 
   function todayKey(date = new Date()) {
     return date.toISOString().slice(0, 10);
@@ -33,10 +45,36 @@
     return Math.floor(new Date(`${day}T00:00:00.000Z`).getTime() / DAY_MS);
   }
 
+  function recordStorageError(type, error) {
+    if (type === 'read') diagnostics.storageReadFailures += 1;
+    if (type === 'write') diagnostics.storageWriteFailures += 1;
+    diagnostics.lastError = error?.message || String(error);
+  }
+
+  function safeGetItem(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      recordStorageError('read', error);
+      return null;
+    }
+  }
+
+  function safeSetItem(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      recordStorageError('write', error);
+      return false;
+    }
+  }
+
   function loadState() {
     try {
-      return { ...DEFAULT_STATE, ...(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) };
+      return { ...DEFAULT_STATE, ...(JSON.parse(safeGetItem(STORAGE_KEY) || '{}')) };
     } catch (error) {
+      diagnostics.lastError = error?.message || String(error);
       return { ...DEFAULT_STATE, report: { at: new Date().toISOString(), warning: `State reset after parse error: ${error.message}` } };
     }
   }
@@ -80,8 +118,9 @@
   function saveState(reason = 'auto') {
     state.lastSaveAt = Date.now();
     state.report = buildReport(reason);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    localStorage.setItem(REPORT_KEY, JSON.stringify(state.report, null, 2));
+    const stateSaved = safeSetItem(STORAGE_KEY, JSON.stringify(state));
+    const reportSaved = safeSetItem(REPORT_KEY, JSON.stringify(state.report, null, 2));
+    if (!stateSaved || !reportSaved) state.report.storageWarning = diagnostics.lastError || 'Browser storage unavailable';
     try { window.NeonBlockGame?.saveState?.(); } catch (error) { state.report.saveWarning = error.message; }
     return state.report;
   }
@@ -138,7 +177,9 @@
       playerCash: Math.floor(Number(player?.cash || 0)),
       playerXp: Math.floor(Number(player?.xp || 0)),
       chunks: snapshot?.chunks ?? 0,
-      runtimeReady: Boolean(window.NeonBlockGame?.getSnapshot)
+      runtimeReady: Boolean(window.NeonBlockGame?.getSnapshot),
+      storageReadFailures: diagnostics.storageReadFailures,
+      storageWriteFailures: diagnostics.storageWriteFailures
     };
   }
 
@@ -195,7 +236,7 @@
     injectStyles();
     panel = document.createElement('section');
     panel.id = PANEL_ID;
-    panel.className = localStorage.getItem(OPEN_KEY) === '1' ? '' : 'hidden';
+    panel.className = safeGetItem(OPEN_KEY) === '1' ? '' : 'hidden';
     panel.innerHTML = `
       <h3>Daily Bonus <span style="float:right;font-size:12px;color:#ffeeb8">F8</span></h3>
       <p id="daily-bonus-status">Checking local streak...</p>
@@ -235,12 +276,13 @@
   function togglePanel() {
     buildPanel();
     const hidden = panel.classList.toggle('hidden');
-    localStorage.setItem(OPEN_KEY, hidden ? '0' : '1');
+    safeSetItem(OPEN_KEY, hidden ? '0' : '1');
     render();
   }
 
   function render() {
-    if (!panel) return;
+    if (!panel || document.hidden) return;
+    diagnostics.renderCount += 1;
     normalizeDailyState();
     const reward = currentReward();
     const ready = canClaimToday();
@@ -255,22 +297,60 @@
     reportEl.textContent = JSON.stringify(buildReport('render'), null, 2);
   }
 
+  function stopScheduler() {
+    if (renderTimer) clearTimeout(renderTimer);
+    renderTimer = 0;
+    diagnostics.timerActive = false;
+  }
+
+  function scheduleRender() {
+    stopScheduler();
+    if (document.hidden) return;
+    diagnostics.timerActive = true;
+    renderTimer = window.setTimeout(() => {
+      renderTimer = 0;
+      diagnostics.timerActive = false;
+      render();
+      scheduleRender();
+    }, RENDER_INTERVAL_MS);
+  }
+
+  function handleVisibilityChange() {
+    diagnostics.pausedForVisibility = document.hidden;
+    if (document.hidden) {
+      stopScheduler();
+      saveState('hidden-page daily backup');
+      return;
+    }
+    render();
+    scheduleRender();
+  }
+
+  function getStatus() {
+    return {
+      ...diagnostics,
+      claimReady: canClaimToday(),
+      streak: Math.max(0, Number(state.streak || 0)),
+      lastClaimDay: state.lastClaimDay || null,
+      renderIntervalMs: RENDER_INTERVAL_MS
+    };
+  }
+
   function boot() {
     buildPanel();
     addMobileButton();
     normalizeDailyState();
-    setInterval(render, 5000);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'F8' && !event.repeat) {
         event.preventDefault();
         togglePanel();
       }
     });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) saveState('hidden-page daily backup');
-    });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', () => saveState('pagehide daily backup'));
     render();
+    scheduleRender();
+    window.NeonBlockDailyBonus = { getStatus, refresh: render, saveNow: saveState };
   }
 
   if (document.readyState === 'loading') {

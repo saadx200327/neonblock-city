@@ -5,12 +5,42 @@
   const PANEL_ID = 'world-safety-panel';
   const MAX_SAFE_COORDINATE = 250000;
   const MIN_Y = -8;
-  let hidden = localStorage.getItem(`${STORE_KEY}:hidden`) === '1';
+  const SCAN_INTERVAL_MS = 1200;
+  const BOOT_INTERVAL_MS = 400;
+  let hidden = false;
   let lastFixAt = 0;
   let stableSpot = null;
   let lastReport = 'Watching player position';
+  let storageFailures = 0;
+  let scanTimer = 0;
+  let bootTimer = 0;
+  let scans = 0;
 
   const $ = (id) => document.getElementById(id);
+
+  function readStorage(key, fallback = null) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value;
+    } catch (error) {
+      storageFailures += 1;
+      lastReport = `Storage unavailable: ${error.message || 'read failed'}`;
+      return fallback;
+    }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      storageFailures += 1;
+      lastReport = `Storage unavailable: ${error.message || 'write failed'}`;
+      return false;
+    }
+  }
+
+  hidden = readStorage(`${STORE_KEY}:hidden`, '0') === '1';
 
   function game() {
     return window.NeonBlockGame;
@@ -47,15 +77,13 @@
     if (!pos || !finite(pos.x) || !finite(pos.y) || !finite(pos.z)) return;
     if (pos.y < 0.8 || Math.abs(pos.x) > MAX_SAFE_COORDINATE || Math.abs(pos.z) > MAX_SAFE_COORDINATE) return;
     stableSpot = { x: pos.x, y: Math.max(1, pos.y), z: pos.z, at: Date.now() };
-    try {
-      localStorage.setItem(`${STORE_KEY}:stable`, JSON.stringify(stableSpot));
-    } catch (_) {}
+    writeStorage(`${STORE_KEY}:stable`, JSON.stringify(stableSpot));
   }
 
   function loadStableSpot() {
     if (stableSpot) return stableSpot;
     try {
-      const parsed = JSON.parse(localStorage.getItem(`${STORE_KEY}:stable`) || 'null');
+      const parsed = JSON.parse(readStorage(`${STORE_KEY}:stable`, 'null') || 'null');
       if (parsed && finite(parsed.x) && finite(parsed.y) && finite(parsed.z)) stableSpot = parsed;
     } catch (_) {}
     return stableSpot;
@@ -98,6 +126,7 @@
   }
 
   function scan() {
+    scans += 1;
     const snap = snapshot();
     const pos = snap?.player?.mesh?.position;
     const reason = needsRecovery(pos);
@@ -158,10 +187,49 @@
 
   function togglePanel() {
     hidden = !hidden;
-    localStorage.setItem(`${STORE_KEY}:hidden`, hidden ? '1' : '0');
+    writeStorage(`${STORE_KEY}:hidden`, hidden ? '1' : '0');
     updatePanel();
     popup(hidden ? 'World Safety hidden' : 'World Safety shown');
   }
+
+  function stopScheduler() {
+    clearTimeout(scanTimer);
+    clearTimeout(bootTimer);
+    scanTimer = 0;
+    bootTimer = 0;
+  }
+
+  function scheduleScan(delay = SCAN_INTERVAL_MS) {
+    clearTimeout(scanTimer);
+    if (document.hidden || !game()?.getSnapshot) return;
+    scanTimer = setTimeout(() => {
+      scanTimer = 0;
+      scan();
+      updatePanel();
+      scheduleScan();
+    }, delay);
+  }
+
+  function boot() {
+    clearTimeout(bootTimer);
+    if (document.hidden) return;
+    if (!game()?.getSnapshot) {
+      bootTimer = setTimeout(boot, BOOT_INTERVAL_MS);
+      return;
+    }
+    ensurePanel();
+    scan();
+    updatePanel();
+    scheduleScan();
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopScheduler();
+      return;
+    }
+    boot();
+  });
 
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyZ' || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -179,15 +247,21 @@
     recover,
     scan,
     getStableSpot: () => loadStableSpot(),
-    getStatus: () => ({ maxSafeCoordinate: MAX_SAFE_COORDINATE, lastFixAt, lastReport })
+    refresh: () => {
+      scan();
+      updatePanel();
+    },
+    getStatus: () => ({
+      version: 2,
+      maxSafeCoordinate: MAX_SAFE_COORDINATE,
+      lastFixAt,
+      lastReport,
+      storageFailures,
+      scans,
+      active: Boolean(scanTimer || bootTimer),
+      pausedForVisibility: document.hidden
+    })
   };
 
-  const boot = setInterval(() => {
-    if (!game()?.getSnapshot) return;
-    clearInterval(boot);
-    ensurePanel();
-    scan();
-    updatePanel();
-    setInterval(() => { scan(); updatePanel(); }, 1200);
-  }, 400);
+  boot();
 })();

@@ -10,6 +10,7 @@
   let brakeButton;
   let brakeHeld = false;
   let brakePointerId = null;
+  const keyboardBrakeCodes = new Set();
   let lastWarn = 0;
   let blockedPanelRepeats = 0;
   let blockedRefuelRepeats = 0;
@@ -90,12 +91,18 @@
     return true;
   }
 
-  function releaseBrake({ stabilize = false, forced = false } = {}) {
-    if (forced && brakeHeld) forcedBrakeReleases++;
-    brakeHeld = false;
-    brakePointerId = null;
-    brakeButton?.setAttribute('aria-pressed', 'false');
-    if (stabilize) applyBrake(0.35);
+  function syncBrakeHeld() {
+    brakeHeld = brakePointerId !== null || keyboardBrakeCodes.size > 0;
+    brakeButton?.setAttribute('aria-pressed', brakePointerId !== null ? 'true' : 'false');
+  }
+
+  function releaseBrake({ stabilize = false, forced = false, pointer = true, keyboard = true } = {}) {
+    const wasHeld = brakeHeld;
+    if (pointer) brakePointerId = null;
+    if (keyboard) keyboardBrakeCodes.clear();
+    syncBrakeHeld();
+    if (forced && wasHeld && !brakeHeld) forcedBrakeReleases++;
+    if (stabilize && !brakeHeld) applyBrake(0.35);
   }
 
   function refuelVehicle() {
@@ -146,15 +153,14 @@
         return;
       }
       brakePointerId = event.pointerId;
-      brakeHeld = true;
-      brakeButton.setAttribute('aria-pressed', 'true');
+      syncBrakeHeld();
       try { brakeButton.setPointerCapture(event.pointerId); } catch (_) {}
       applyBrake(0.42);
     }, { passive: false });
 
     const stop = (event) => {
       if (brakePointerId !== null && event?.pointerId !== undefined && event.pointerId !== brakePointerId) return;
-      releaseBrake();
+      releaseBrake({ pointer: true, keyboard: false });
     };
     brakeButton.addEventListener('pointerup', stop);
     brakeButton.addEventListener('pointercancel', stop);
@@ -224,18 +230,26 @@
       }
       if ((event.code === 'KeyX' || event.code === 'Space') && getPlayer()?.activeVehicle) {
         event.preventDefault();
-        brakeHeld = true;
+        keyboardBrakeCodes.add(event.code);
+        syncBrakeHeld();
         applyBrake(event.code === 'Space' ? 0.5 : 0.38);
       }
     }, { passive: false });
     addEventListener('keyup', (event) => {
-      if (event.code === 'KeyX' || event.code === 'Space') releaseBrake();
+      if (event.code === 'KeyX' || event.code === 'Space') {
+        keyboardBrakeCodes.delete(event.code);
+        syncBrakeHeld();
+      }
     });
     addEventListener('pointerup', (event) => {
-      if (brakePointerId !== null && event.pointerId === brakePointerId) releaseBrake();
+      if (brakePointerId !== null && event.pointerId === brakePointerId) {
+        releaseBrake({ pointer: true, keyboard: false });
+      }
     }, true);
     addEventListener('pointercancel', (event) => {
-      if (brakePointerId !== null && event.pointerId === brakePointerId) releaseBrake({ forced: true });
+      if (brakePointerId !== null && event.pointerId === brakePointerId) {
+        releaseBrake({ forced: true, pointer: true, keyboard: false });
+      }
     }, true);
     addEventListener('blur', () => releaseBrake({ stabilize: true, forced: true }));
     document.addEventListener('visibilitychange', () => {
@@ -258,12 +272,13 @@
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 5,
+    version: 6,
     refuelVehicle,
     releaseBrake: () => releaseBrake({ stabilize: true, forced: true }),
     getStatus: () => ({
       brakeHeld,
       brakePointerId,
+      keyboardBrakeCodes: [...keyboardBrakeCodes],
       panelHidden: Boolean(panel?.classList.contains('hidden')),
       blockedPanelRepeats,
       blockedRefuelRepeats,

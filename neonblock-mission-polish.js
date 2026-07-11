@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = 'neonblock:missionPolish';
   const PANEL_ID = 'mission-polish-panel';
+  const UPDATE_INTERVAL_MS = 700;
   const MISSION_TEXT = {
     courier: {
       title: 'Courier Sprint',
@@ -30,6 +31,9 @@
   let lastMission = '';
   let lastSnapshotAt = 0;
   let lastMissionRepairAt = 0;
+  let updateTimer = 0;
+  let updateCount = 0;
+  let hiddenPauseCount = 0;
 
   function loadState() {
     try {
@@ -228,6 +232,7 @@
     const missionId = getMissionId(missionName);
     const snapshot = getSnapshot();
     const completed = snapshot?.player?.completed || {};
+    updateCount += 1;
 
     if (repairCompletedMission(snapshot, missionId)) return;
 
@@ -256,6 +261,36 @@
     panel.classList.toggle('hidden', state.hidden);
   }
 
+  function clearUpdateTimer() {
+    if (!updateTimer) return;
+    clearTimeout(updateTimer);
+    updateTimer = 0;
+  }
+
+  function scheduleUpdate(delay = UPDATE_INTERVAL_MS) {
+    clearUpdateTimer();
+    if (document.hidden) return;
+    updateTimer = window.setTimeout(() => {
+      updateTimer = 0;
+      if (document.hidden) {
+        hiddenPauseCount += 1;
+        return;
+      }
+      updateCoach();
+      scheduleUpdate();
+    }, delay);
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      hiddenPauseCount += 1;
+      clearUpdateTimer();
+      return;
+    }
+    updateCoach();
+    scheduleUpdate();
+  }
+
   function togglePanel() {
     state.hidden = !state.hidden;
     ensurePanel().classList.toggle('hidden', state.hidden);
@@ -282,8 +317,11 @@
 
   const start = () => {
     ensurePanel();
-    setInterval(updateCoach, 700);
-    updateCoach();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (!document.hidden) {
+      updateCoach();
+      scheduleUpdate();
+    }
   };
 
   window.NeonBlockMissionPolish = {
@@ -291,12 +329,22 @@
       const snapshot = getSnapshot();
       const missionId = getMissionId(getMissionName());
       return {
+        version: 2,
         missionId,
         completed: { ...(snapshot?.player?.completed || {}) },
-        activeMissionAlreadyCompleted: Boolean(snapshot?.player?.completed?.[missionId])
+        activeMissionAlreadyCompleted: Boolean(snapshot?.player?.completed?.[missionId]),
+        documentHidden: document.hidden,
+        schedulerActive: Boolean(updateTimer),
+        updateIntervalMs: UPDATE_INTERVAL_MS,
+        updateCount,
+        hiddenPauseCount
       };
     },
-    repair: () => repairCompletedMission(getSnapshot(), getMissionId(getMissionName()))
+    repair: () => repairCompletedMission(getSnapshot(), getMissionId(getMissionName())),
+    refresh: () => {
+      updateCoach();
+      scheduleUpdate();
+    }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

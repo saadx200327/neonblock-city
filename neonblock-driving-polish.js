@@ -7,11 +7,14 @@
   const REFUEL_COST = 40;
   const REFUEL_AMOUNT = 45;
   let panel;
+  let brakeButton;
   let brakeHeld = false;
+  let brakePointerId = null;
   let lastWarn = 0;
   let blockedPanelRepeats = 0;
   let blockedRefuelRepeats = 0;
   let refuelCount = 0;
+  let forcedBrakeReleases = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -46,7 +49,11 @@
       #btn-mobile-brake {
         border-color: rgba(255, 204, 51, 0.7);
         background: rgba(255, 204, 51, 0.16);
+        touch-action: none;
+        -webkit-touch-callout: none;
+        user-select: none;
       }
+      #btn-mobile-brake[aria-pressed="true"] { transform: scale(0.96); }
       @media (min-width: 820px) {
         #driving-assist-panel { bottom: 18px; left: 18px; }
       }
@@ -67,9 +74,7 @@
     try { return window.NeonBlockGame?.getSnapshot?.(); } catch (_) { return null; }
   }
 
-  function getPlayer() {
-    return snapshot()?.player || null;
-  }
+  function getPlayer() { return snapshot()?.player || null; }
 
   function horizontalSpeed(player) {
     if (!player?.vel) return 0;
@@ -84,22 +89,21 @@
     return true;
   }
 
+  function releaseBrake({ stabilize = false, forced = false } = {}) {
+    if (forced && brakeHeld) forcedBrakeReleases++;
+    brakeHeld = false;
+    brakePointerId = null;
+    brakeButton?.setAttribute('aria-pressed', 'false');
+    if (stabilize) applyBrake(0.35);
+  }
+
   function refuelVehicle() {
     const player = getPlayer();
     const vehicle = player?.activeVehicle;
-    if (!vehicle?.userData) {
-      toast('Enter a vehicle to refuel');
-      return false;
-    }
+    if (!vehicle?.userData) { toast('Enter a vehicle to refuel'); return false; }
     const gas = Number(vehicle.userData.gas) || 0;
-    if (gas >= 99.5) {
-      toast('Fuel tank is already full');
-      return false;
-    }
-    if ((Number(player.cash) || 0) < REFUEL_COST) {
-      toast(`Need $${REFUEL_COST} to refuel`);
-      return false;
-    }
+    if (gas >= 99.5) { toast('Fuel tank is already full'); return false; }
+    if ((Number(player.cash) || 0) < REFUEL_COST) { toast(`Need $${REFUEL_COST} to refuel`); return false; }
     player.cash -= REFUEL_COST;
     vehicle.userData.gas = Math.min(100, gas + REFUEL_AMOUNT);
     refuelCount++;
@@ -125,18 +129,32 @@
   function installMobileBrake() {
     const rail = $('action-rail');
     if (!rail || $('btn-mobile-brake')) return;
-    const button = document.createElement('button');
-    button.className = 'action-btn';
-    button.id = 'btn-mobile-brake';
-    button.type = 'button';
-    button.textContent = 'Brake';
-    const start = (event) => { event.preventDefault(); brakeHeld = true; applyBrake(0.42); };
-    const stop = () => { brakeHeld = false; };
-    button.addEventListener('pointerdown', start, { passive: false });
-    button.addEventListener('pointerup', stop);
-    button.addEventListener('pointercancel', stop);
-    button.addEventListener('pointerleave', stop);
-    rail.insertBefore(button, $('btn-mobile-unstuck') || rail.lastChild);
+    brakeButton = document.createElement('button');
+    brakeButton.className = 'action-btn';
+    brakeButton.id = 'btn-mobile-brake';
+    brakeButton.type = 'button';
+    brakeButton.textContent = 'Brake';
+    brakeButton.setAttribute('aria-label', 'Hold to brake vehicle');
+    brakeButton.setAttribute('aria-pressed', 'false');
+
+    brakeButton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      if (!getPlayer()?.activeVehicle) return;
+      brakePointerId = event.pointerId;
+      brakeHeld = true;
+      brakeButton.setAttribute('aria-pressed', 'true');
+      try { brakeButton.setPointerCapture(event.pointerId); } catch (_) {}
+      applyBrake(0.42);
+    }, { passive: false });
+
+    const stop = (event) => {
+      if (brakePointerId !== null && event?.pointerId !== undefined && event.pointerId !== brakePointerId) return;
+      releaseBrake();
+    };
+    brakeButton.addEventListener('pointerup', stop);
+    brakeButton.addEventListener('pointercancel', stop);
+    brakeButton.addEventListener('lostpointercapture', stop);
+    rail.insertBefore(brakeButton, $('btn-mobile-unstuck') || rail.lastChild);
   }
 
   function installPanel() {
@@ -173,9 +191,10 @@
     const speedEl = $('driving-assist-speed');
     const tip = $('driving-assist-tip');
     const refuelButton = $('btn-driving-assist-refuel');
+    if (!inVehicle && brakeHeld) releaseBrake({ forced: true });
     if (state) state.textContent = inVehicle ? `${player.activeVehicle.userData?.name || 'Vehicle'} • gas ${gas}` : 'On foot';
     if (speedEl) speedEl.textContent = String(speed);
-    if (refuelButton) refuelButton.disabled = !inVehicle || gas >= 100;
+    if (refuelButton) refuelButton.disabled = !inVehicle || gas >= 100 || (Number(player.cash) || 0) < REFUEL_COST;
     if (tip) {
       tip.textContent = !inVehicle
         ? 'Enter a vehicle, then press Space/X or mobile Brake.'
@@ -191,23 +210,12 @@
   function wireKeys() {
     addEventListener('keydown', (event) => {
       if (event.code === 'KeyK') {
-        if (event.repeat) {
-          blockedPanelRepeats++;
-          event.preventDefault();
-          return;
-        }
+        if (event.repeat) { blockedPanelRepeats++; event.preventDefault(); return; }
         togglePanel();
       }
       if (event.code === 'KeyR') {
-        if (event.repeat) {
-          blockedRefuelRepeats++;
-          event.preventDefault();
-          return;
-        }
-        if (getPlayer()?.activeVehicle) {
-          event.preventDefault();
-          refuelVehicle();
-        }
+        if (event.repeat) { blockedRefuelRepeats++; event.preventDefault(); return; }
+        if (getPlayer()?.activeVehicle) { event.preventDefault(); refuelVehicle(); }
       }
       if ((event.code === 'KeyX' || event.code === 'Space') && getPlayer()?.activeVehicle) {
         event.preventDefault();
@@ -216,17 +224,17 @@
       }
     }, { passive: false });
     addEventListener('keyup', (event) => {
-      if (event.code === 'KeyX' || event.code === 'Space') brakeHeld = false;
+      if (event.code === 'KeyX' || event.code === 'Space') releaseBrake();
     });
-    addEventListener('blur', () => {
-      brakeHeld = false;
-      applyBrake(0.35);
-    });
+    addEventListener('pointerup', (event) => {
+      if (brakePointerId !== null && event.pointerId === brakePointerId) releaseBrake();
+    }, true);
+    addEventListener('pointercancel', (event) => {
+      if (brakePointerId !== null && event.pointerId === brakePointerId) releaseBrake({ forced: true });
+    }, true);
+    addEventListener('blur', () => releaseBrake({ stabilize: true, forced: true }));
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        brakeHeld = false;
-        applyBrake(0.35);
-      }
+      if (document.hidden) releaseBrake({ stabilize: true, forced: true });
     });
   }
 
@@ -245,13 +253,16 @@
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 3,
+    version: 4,
     refuelVehicle,
+    releaseBrake: () => releaseBrake({ stabilize: true, forced: true }),
     getStatus: () => ({
       brakeHeld,
+      brakePointerId,
       panelHidden: Boolean(panel?.classList.contains('hidden')),
       blockedPanelRepeats,
       blockedRefuelRepeats,
+      forcedBrakeReleases,
       refuelCount,
       refuelCost: REFUEL_COST,
       refuelAmount: REFUEL_AMOUNT,

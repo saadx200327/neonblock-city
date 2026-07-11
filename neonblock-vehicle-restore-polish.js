@@ -3,17 +3,21 @@
 
   const STORAGE_PREFIX = 'neonblock:';
   const state = {
+    version: 2,
     wrapped: false,
     attempts: 0,
     restored: 0,
     skipped: 0,
+    superseded: 0,
     lastSlot: null,
     lastVehicleId: null,
     lastReason: 'not-run'
   };
 
   let restoredMesh = null;
+  let restoredPlayer = null;
   let cleanupFrame = 0;
+  let restoreGeneration = 0;
 
   function parseSave(slot, supplied) {
     try {
@@ -38,14 +42,20 @@
     );
   }
 
-  function removeRestoredMesh() {
+  function removeRestoredMesh({ clearActive = true } = {}) {
     cancelAnimationFrame(cleanupFrame);
     cleanupFrame = 0;
     if (!restoredMesh) return;
+
+    if (clearActive && restoredPlayer?.activeVehicle === restoredMesh) {
+      restoredPlayer.activeVehicle = null;
+    }
+
     restoredMesh.parent?.remove(restoredMesh);
     restoredMesh.geometry?.dispose?.();
     restoredMesh.material?.dispose?.();
     restoredMesh = null;
+    restoredPlayer = null;
   }
 
   function watchForExit(player, mesh) {
@@ -53,7 +63,7 @@
     const check = () => {
       if (restoredMesh !== mesh) return;
       if (player.activeVehicle !== mesh) {
-        removeRestoredMesh();
+        removeRestoredMesh({ clearActive: false });
         state.lastReason = 'restored-vehicle-exited-cleanly';
         return;
       }
@@ -117,6 +127,7 @@
     scene.add(mesh);
     player.activeVehicle = mesh;
     restoredMesh = mesh;
+    restoredPlayer = player;
     state.restored += 1;
     state.lastVehicleId = mesh.userData.id;
     state.lastReason = 'restored-distant-active-vehicle';
@@ -127,20 +138,34 @@
     return true;
   }
 
+  function scheduleRestore(slot, supplied) {
+    const generation = ++restoreGeneration;
+    queueMicrotask(() => {
+      if (generation !== restoreGeneration) {
+        state.superseded += 1;
+        state.lastReason = 'superseded-by-newer-load';
+        return;
+      }
+      restoreVehicle(slot, supplied);
+    });
+  }
+
   function install() {
     const game = window.NeonBlockGame;
     if (!game?.loadState || state.wrapped) return false;
 
     const originalLoadState = game.loadState.bind(game);
     game.loadState = function loadStateWithVehicleRecovery(slot = 'slot1', data = null) {
+      ++restoreGeneration;
+      removeRestoredMesh();
       const result = originalLoadState(slot, data);
-      queueMicrotask(() => restoreVehicle(slot, data));
+      scheduleRestore(slot, data);
       return result;
     };
 
     state.wrapped = true;
     const currentSlot = game.getSnapshot?.().player?.slot || 'slot1';
-    queueMicrotask(() => restoreVehicle(currentSlot, null));
+    scheduleRestore(currentSlot, null);
     return true;
   }
 
@@ -149,8 +174,19 @@
   }
 
   window.NeonBlockVehicleRestore = {
-    getStatus: () => ({ ...state, active: Boolean(restoredMesh?.parent) }),
-    retry: (slot = window.NeonBlockGame?.getSnapshot?.().player?.slot || 'slot1') => restoreVehicle(slot, null),
-    cleanup: removeRestoredMesh
+    getStatus: () => ({
+      ...state,
+      active: Boolean(restoredMesh?.parent),
+      generation: restoreGeneration
+    }),
+    retry: (slot = window.NeonBlockGame?.getSnapshot?.().player?.slot || 'slot1') => {
+      ++restoreGeneration;
+      removeRestoredMesh();
+      return restoreVehicle(slot, null);
+    },
+    cleanup: () => {
+      ++restoreGeneration;
+      removeRestoredMesh();
+    }
   };
 })();

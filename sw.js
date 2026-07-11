@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v76`;
+const CACHE_NAME = `${CACHE_PREFIX}v77`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
   './',

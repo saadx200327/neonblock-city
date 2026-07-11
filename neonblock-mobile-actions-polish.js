@@ -104,6 +104,9 @@
     if (drawer) return;
     drawer = document.createElement('section');
     drawer.id = DRAWER_ID;
+    drawer.hidden = true;
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'false');
     drawer.setAttribute('aria-label', 'More mobile game actions');
     drawer.innerHTML = `
       <div class="mobile-action-head">
@@ -131,15 +134,21 @@
       moreButton.id = MORE_ID;
       moreButton.className = 'action-btn';
       moreButton.type = 'button';
-      moreButton.addEventListener('click', () => setOpen(!open));
       rail.appendChild(moreButton);
+    }
+    if (moreButton.dataset.neonblockMobileActionsBound !== 'true') {
+      moreButton.addEventListener('click', () => setOpen(!open));
+      moreButton.dataset.neonblockMobileActionsBound = 'true';
     }
   }
 
   function setOpen(next) {
     open = Boolean(next) && isMobileLayout() && optionalButtons(grid).length > 0;
     writeOpenState();
-    if (drawer) drawer.hidden = !open;
+    if (drawer) {
+      drawer.hidden = !open;
+      drawer.setAttribute('aria-hidden', String(!open));
+    }
     if (moreButton) moreButton.setAttribute('aria-expanded', String(open));
   }
 
@@ -155,6 +164,10 @@
     const countEl = drawer?.querySelector('#mobile-action-count');
     if (countEl) countEl.textContent = `${count} shortcut${count === 1 ? '' : 's'} · tap one to close`;
     if (!count || !isMobileLayout()) setOpen(false);
+    else if (drawer) {
+      drawer.hidden = !open;
+      drawer.setAttribute('aria-hidden', String(!open));
+    }
   }
 
   function moveToDrawer() {
@@ -198,8 +211,11 @@
 
   function getSnapshot() {
     return {
+      version: 2,
       mobileLayout: isMobileLayout(),
       open,
+      drawerHidden: drawer?.hidden ?? true,
+      triggerBound: moreButton?.dataset.neonblockMobileActionsBound === 'true',
       coreActions: Array.from(rail?.querySelectorAll?.('button.action-btn') || []).filter((button) => CORE_IDS.has(button.id)).map((button) => button.id),
       drawerActions: optionalButtons(grid).map((button) => ({ id: button.id, label: button.textContent.trim() }))
     };

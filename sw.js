@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v75`;
+const CACHE_NAME = `${CACHE_PREFIX}v76`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
   './',
@@ -32,6 +32,7 @@ const CORE_ASSETS = [
   './neonblock-driving-polish.js',
   './neonblock-mission-polish.js',
   './neonblock-property-polish.js',
+  './neonblock-property-slot-polish.js',
   './neonblock-performance-polish.js',
   './neonblock-progression-polish.js',
   './neonblock-world-safety-polish.js',

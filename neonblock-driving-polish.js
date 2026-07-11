@@ -4,10 +4,14 @@
   const STORE_KEY = 'neonblock:driving-assist-hidden';
   const SPEED_WARN = 34;
   const SPEED_LIMIT = 48;
+  const REFUEL_COST = 40;
+  const REFUEL_AMOUNT = 45;
   let panel;
   let brakeHeld = false;
   let lastWarn = 0;
   let blockedPanelRepeats = 0;
+  let blockedRefuelRepeats = 0;
+  let refuelCount = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -80,6 +84,30 @@
     return true;
   }
 
+  function refuelVehicle() {
+    const player = getPlayer();
+    const vehicle = player?.activeVehicle;
+    if (!vehicle?.userData) {
+      toast('Enter a vehicle to refuel');
+      return false;
+    }
+    const gas = Number(vehicle.userData.gas) || 0;
+    if (gas >= 99.5) {
+      toast('Fuel tank is already full');
+      return false;
+    }
+    if ((Number(player.cash) || 0) < REFUEL_COST) {
+      toast(`Need $${REFUEL_COST} to refuel`);
+      return false;
+    }
+    player.cash -= REFUEL_COST;
+    vehicle.userData.gas = Math.min(100, gas + REFUEL_AMOUNT);
+    refuelCount++;
+    window.NeonBlockGame?.saveState?.(player.slot || 'slot1');
+    toast(`Refueled +${REFUEL_AMOUNT} gas • -$${REFUEL_COST}`);
+    return true;
+  }
+
   function clampUnsafeSpeed(player) {
     if (!player?.activeVehicle || !player.vel) return;
     const speed = horizontalSpeed(player);
@@ -119,9 +147,11 @@
       <div><strong>Driving Assist</strong> <span id="driving-assist-state">On foot</span></div>
       <div>Speed: <span id="driving-assist-speed">0</span></div>
       <div>Tip: <span id="driving-assist-tip">Enter a vehicle to use brake assist.</span></div>
+      <button id="btn-driving-assist-refuel" type="button">Refuel $${REFUEL_COST} (R)</button>
       <button id="btn-driving-assist-hide" type="button">Hide K</button>
     `;
     document.body.appendChild(panel);
+    $('btn-driving-assist-refuel')?.addEventListener('click', refuelVehicle);
     $('btn-driving-assist-hide')?.addEventListener('click', togglePanel);
     panel.classList.toggle('hidden', localStorage.getItem(STORE_KEY) === '1');
   }
@@ -142,15 +172,17 @@
     const state = $('driving-assist-state');
     const speedEl = $('driving-assist-speed');
     const tip = $('driving-assist-tip');
+    const refuelButton = $('btn-driving-assist-refuel');
     if (state) state.textContent = inVehicle ? `${player.activeVehicle.userData?.name || 'Vehicle'} • gas ${gas}` : 'On foot';
     if (speedEl) speedEl.textContent = String(speed);
+    if (refuelButton) refuelButton.disabled = !inVehicle || gas >= 100;
     if (tip) {
       tip.textContent = !inVehicle
         ? 'Enter a vehicle, then press Space/X or mobile Brake.'
         : speed > SPEED_WARN
           ? 'Tap Brake before tight turns to avoid overshooting missions.'
           : gas <= 15
-            ? 'Gas is low. Use R or Refuel before long delivery routes.'
+            ? `Gas is low. Press R or Refuel for $${REFUEL_COST}.`
             : 'Space/X or mobile Brake slows the car without exiting.';
     }
     clampUnsafeSpeed(player);
@@ -165,6 +197,17 @@
           return;
         }
         togglePanel();
+      }
+      if (event.code === 'KeyR') {
+        if (event.repeat) {
+          blockedRefuelRepeats++;
+          event.preventDefault();
+          return;
+        }
+        if (getPlayer()?.activeVehicle) {
+          event.preventDefault();
+          refuelVehicle();
+        }
       }
       if ((event.code === 'KeyX' || event.code === 'Space') && getPlayer()?.activeVehicle) {
         event.preventDefault();
@@ -202,11 +245,16 @@
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 2,
+    version: 3,
+    refuelVehicle,
     getStatus: () => ({
       brakeHeld,
       panelHidden: Boolean(panel?.classList.contains('hidden')),
       blockedPanelRepeats,
+      blockedRefuelRepeats,
+      refuelCount,
+      refuelCost: REFUEL_COST,
+      refuelAmount: REFUEL_AMOUNT,
       speedLimit: SPEED_LIMIT
     })
   };

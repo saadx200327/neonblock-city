@@ -13,6 +13,7 @@
   let lastWarn = 0;
   let blockedPanelRepeats = 0;
   let blockedRefuelRepeats = 0;
+  let blockedBrakePointers = 0;
   let refuelCount = 0;
   let forcedBrakeReleases = 0;
 
@@ -140,6 +141,10 @@
     brakeButton.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       if (!getPlayer()?.activeVehicle) return;
+      if (brakePointerId !== null && brakePointerId !== event.pointerId) {
+        blockedBrakePointers++;
+        return;
+      }
       brakePointerId = event.pointerId;
       brakeHeld = true;
       brakeButton.setAttribute('aria-pressed', 'true');
@@ -253,7 +258,7 @@
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 4,
+    version: 5,
     refuelVehicle,
     releaseBrake: () => releaseBrake({ stabilize: true, forced: true }),
     getStatus: () => ({
@@ -262,6 +267,7 @@
       panelHidden: Boolean(panel?.classList.contains('hidden')),
       blockedPanelRepeats,
       blockedRefuelRepeats,
+      blockedBrakePointers,
       forcedBrakeReleases,
       refuelCount,
       refuelCost: REFUEL_COST,

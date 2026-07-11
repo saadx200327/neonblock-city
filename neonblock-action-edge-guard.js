@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  const EDGE_ACTIONS = new Set(['Space', 'KeyE']);
+  const EDGE_ACTIONS = new Set(['Space', 'KeyE', 'KeyP', 'Escape', 'KeyM', 'KeyU']);
   const pendingRelease = new Set();
+  let blockedRepeats = 0;
 
   function releaseAfterOneFrame(event) {
     if (pendingRelease.has(event.code)) return;
@@ -23,6 +24,7 @@
     if (!EDGE_ACTIONS.has(event.code)) return;
 
     if (event.repeat || pendingRelease.has(event.code)) {
+      blockedRepeats++;
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
@@ -34,8 +36,13 @@
   window.addEventListener('blur', () => pendingRelease.clear());
 
   window.NeonBlockActionEdgeGuard = {
-    version: 1,
+    version: 2,
     guardedActions: Array.from(EDGE_ACTIONS),
-    getPendingActions: () => Array.from(pendingRelease)
+    getPendingActions: () => Array.from(pendingRelease),
+    getStatus: () => ({
+      guardedActions: Array.from(EDGE_ACTIONS),
+      pendingActions: Array.from(pendingRelease),
+      blockedRepeats
+    })
   };
 })();

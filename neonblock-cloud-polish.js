@@ -1,10 +1,17 @@
 (() => {
   'use strict';
 
+  const VERSION = 2;
   const STORAGE_KEY = 'neonblock:cloud-polish:hidden';
   const LAST_TEST_KEY = 'neonblock:cloud-polish:last-test';
+  const REFRESH_MS = 2500;
   const $ = (id) => document.getElementById(id);
   let testInFlight = false;
+  let refreshTimer = 0;
+  let panelRef = null;
+  let storageReadFailures = 0;
+  let storageWriteFailures = 0;
+  let lastStorageError = null;
 
   function getGame() {
     return window.NeonBlockGame || null;
@@ -16,6 +23,26 @@
 
   function safeJson(value) {
     try { return JSON.stringify(value, null, 2); } catch (_) { return '{}'; }
+  }
+
+  function safeStorageGet(key) {
+    try { return localStorage.getItem(key); }
+    catch (error) {
+      storageReadFailures += 1;
+      lastStorageError = error?.message || 'localStorage read failed';
+      return null;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      storageWriteFailures += 1;
+      lastStorageError = error?.message || 'localStorage write failed';
+      return false;
+    }
   }
 
   function notify(text) {
@@ -54,11 +81,11 @@
   }
 
   function getLastTest() {
-    try { return JSON.parse(localStorage.getItem(LAST_TEST_KEY) || 'null'); } catch (_) { return null; }
+    try { return JSON.parse(safeStorageGet(LAST_TEST_KEY) || 'null'); } catch (_) { return null; }
   }
 
   function rememberTest(result) {
-    try { localStorage.setItem(LAST_TEST_KEY, JSON.stringify({ ...result, at: Date.now() })); } catch (_) {}
+    safeStorageSet(LAST_TEST_KEY, JSON.stringify({ ...result, at: Date.now() }));
   }
 
   function describeLastTest() {
@@ -68,20 +95,35 @@
     return `${last.ok ? 'ok' : 'local only'} ${age}s ago`;
   }
 
+  function storageAvailable() {
+    const key = 'neonblock:cloud-polish:probe';
+    try {
+      localStorage.setItem(key, '1');
+      localStorage.removeItem(key);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function getReport() {
     const game = getGame();
     const cloud = getCloud();
     const snapshot = game?.getSnapshot?.();
     return {
+      version: VERSION,
       at: new Date().toISOString(),
       mode: cloud?.enabled ? 'cloud-ready' : 'local-only',
       firebaseBridgePresent: Boolean(cloud),
       cloudEnabled: Boolean(cloud?.enabled),
       currentSlot: getSlot(snapshot),
       cloudTestInFlight: testInFlight,
-      localStorageAvailable: (() => {
-        try { localStorage.setItem('neonblock:cloud-polish:probe', '1'); localStorage.removeItem('neonblock:cloud-polish:probe'); return true; } catch (_) { return false; }
-      })(),
+      localStorageAvailable: storageAvailable(),
+      storageReadFailures,
+      storageWriteFailures,
+      lastStorageError,
+      pollingActive: Boolean(refreshTimer),
+      pageVisible: !document.hidden,
       hasSaveApi: Boolean(game?.saveState),
       hasLoadApi: Boolean(game?.loadState),
       lastCloudTest: getLastTest(),
@@ -89,14 +131,17 @@
     };
   }
 
-  function updatePanel(panel) {
+  function updatePanel(panel = panelRef) {
+    if (!panel?.isConnected) return;
     const cloud = getCloud();
     const game = getGame();
     const snapshot = game?.getSnapshot?.();
-    const mode = cloud?.enabled ? 'cloud ready' : 'local only';
-    $('cloud-polish-mode').textContent = mode;
-    $('cloud-polish-slot').textContent = getSlot(snapshot);
-    $('cloud-polish-last').textContent = describeLastTest();
+    const modeNode = $('cloud-polish-mode');
+    const slotNode = $('cloud-polish-slot');
+    const lastNode = $('cloud-polish-last');
+    if (modeNode) modeNode.textContent = cloud?.enabled ? 'cloud ready' : 'local only';
+    if (slotNode) slotNode.textContent = getSlot(snapshot);
+    if (lastNode) lastNode.textContent = describeLastTest();
     const testButton = $('cloud-polish-test');
     if (testButton) {
       testButton.disabled = testInFlight;
@@ -104,6 +149,27 @@
       testButton.setAttribute('aria-busy', testInFlight ? 'true' : 'false');
     }
     panel.dataset.mode = cloud?.enabled ? 'cloud' : 'local';
+  }
+
+  function stopScheduler() {
+    if (!refreshTimer) return;
+    clearTimeout(refreshTimer);
+    refreshTimer = 0;
+  }
+
+  function scheduleRefresh() {
+    stopScheduler();
+    if (document.hidden) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = 0;
+      updatePanel();
+      scheduleRefresh();
+    }, REFRESH_MS);
+  }
+
+  function refreshNow() {
+    updatePanel();
+    scheduleRefresh();
   }
 
   function captureLocalSave(game, cloud, slot) {
@@ -159,22 +225,27 @@
     }
   }
 
+  function persistHidden(panel) {
+    const hidden = panel.classList.contains('cloud-polish-hidden');
+    if (!safeStorageSet(STORAGE_KEY, hidden ? '1' : '0')) notify('Panel preference could not be saved');
+  }
+
   function wirePanel(panel) {
-    const hidden = localStorage.getItem(STORAGE_KEY) === '1';
+    const hidden = safeStorageGet(STORAGE_KEY) === '1';
     panel.classList.toggle('cloud-polish-hidden', hidden);
-    $('cloud-polish-toggle').addEventListener('click', () => {
+    $('cloud-polish-toggle')?.addEventListener('click', () => {
       panel.classList.toggle('cloud-polish-hidden');
-      localStorage.setItem(STORAGE_KEY, panel.classList.contains('cloud-polish-hidden') ? '1' : '0');
+      persistHidden(panel);
     });
-    $('cloud-polish-local').addEventListener('click', () => {
+    $('cloud-polish-local')?.addEventListener('click', () => {
       const game = getGame();
       const slot = getSlot(game?.getSnapshot?.());
       if (game?.saveState) { game.saveState(slot); notify(`Local saved ${slot}`); }
       else notify('Save API not ready yet');
       updatePanel(panel);
     });
-    $('cloud-polish-test').addEventListener('click', () => testCloud(panel));
-    $('cloud-polish-copy').addEventListener('click', async () => {
+    $('cloud-polish-test')?.addEventListener('click', () => testCloud(panel));
+    $('cloud-polish-copy')?.addEventListener('click', async () => {
       const text = safeJson(getReport());
       try { await navigator.clipboard?.writeText(text); notify('Cloud report copied'); }
       catch (_) { console.log('[NeonBlock City] Cloud report', text); notify('Cloud report logged'); }
@@ -182,7 +253,7 @@
     document.addEventListener('keydown', (event) => {
       if (event.code !== 'KeyT' || event.ctrlKey || event.metaKey || event.altKey) return;
       panel.classList.toggle('cloud-polish-hidden');
-      localStorage.setItem(STORAGE_KEY, panel.classList.contains('cloud-polish-hidden') ? '1' : '0');
+      persistHidden(panel);
     });
   }
 
@@ -224,12 +295,22 @@
 
   function start() {
     injectStyle();
-    const panel = createPanel();
-    wirePanel(panel);
-    updatePanel(panel);
-    setInterval(() => updatePanel(panel), 2500);
-    window.addEventListener('online', () => updatePanel(panel));
-    window.addEventListener('offline', () => updatePanel(panel));
+    panelRef = createPanel();
+    wirePanel(panelRef);
+    refreshNow();
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopScheduler();
+      else refreshNow();
+    });
+    window.addEventListener('online', refreshNow);
+    window.addEventListener('offline', refreshNow);
+    window.addEventListener('pagehide', stopScheduler);
+
+    window.NeonBlockCloudPolish = {
+      version: VERSION,
+      getStatus: getReport,
+      refresh: refreshNow
+    };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

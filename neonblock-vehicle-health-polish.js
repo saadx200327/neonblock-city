@@ -2,15 +2,49 @@
   'use strict';
 
   const STORAGE_KEY = 'neonblock:vehicle-health-report';
+  const VISIBILITY_KEY = 'neonblock:vehicle-health-visible';
   const PANEL_ID = 'neonblock-vehicle-health-panel';
   const MOBILE_ID = 'btn-mobile-vehicle-health';
+  const POLL_MS = 1200;
   const $ = (id) => document.getElementById(id);
 
+  const diagnostics = {
+    version: 7,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    tickCount: 0,
+    pausedForVisibility: document.hidden,
+    timerActive: false,
+    lastError: ''
+  };
+
+  function safeStorageGet(key, fallback = null) {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastError = String(error?.message || error || 'storage read failed');
+      return fallback;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastError = String(error?.message || error || 'storage write failed');
+      return false;
+    }
+  }
+
   const state = {
-    visible: localStorage.getItem('neonblock:vehicle-health-visible') !== 'false',
+    visible: safeStorageGet(VISIBILITY_KEY, 'true') !== 'false',
     lowHpTicks: 0,
     lastServiceAt: 0,
-    lastReport: ''
+    lastReport: '',
+    timer: 0
   };
 
   function game() {
@@ -21,6 +55,7 @@
     try {
       return game()?.getSnapshot?.() || null;
     } catch (error) {
+      diagnostics.lastError = String(error?.message || error || 'snapshot failed');
       return null;
     }
   }
@@ -43,6 +78,7 @@
       game()?.saveState?.();
       return true;
     } catch (error) {
+      diagnostics.lastError = String(error?.message || error || 'game save failed');
       return false;
     }
   }
@@ -113,13 +149,19 @@
       `status=${statusLine(snap)}`
     ].join('\n');
     state.lastReport = report;
-    localStorage.setItem(STORAGE_KEY, report);
+    safeStorageSet(STORAGE_KEY, report);
     return report;
   }
 
   function copyReport() {
     const report = makeReport();
     navigator.clipboard?.writeText(report).then(() => popup('Vehicle report copied')).catch(() => popup('Vehicle report ready'));
+    render();
+  }
+
+  function setVisible(nextVisible) {
+    state.visible = Boolean(nextVisible);
+    safeStorageSet(VISIBILITY_KEY, String(state.visible));
     render();
   }
 
@@ -149,11 +191,7 @@
       btn.className = 'action-btn';
       btn.id = MOBILE_ID;
       btn.textContent = 'Vehicle';
-      btn.addEventListener('click', () => {
-        state.visible = !state.visible;
-        localStorage.setItem('neonblock:vehicle-health-visible', String(state.visible));
-        render();
-      });
+      btn.addEventListener('click', () => setVisible(!state.visible));
       rail.insertBefore(btn, rail.firstChild);
     }
   }
@@ -172,6 +210,7 @@
   }
 
   function tick() {
+    diagnostics.tickCount += 1;
     const vehicle = activeVehicle();
     if (vehicle) {
       if (clampVehicle(vehicle)) safeSave();
@@ -192,19 +231,61 @@
     render();
   }
 
+  function stopScheduler() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = 0;
+    diagnostics.timerActive = false;
+  }
+
+  function startScheduler() {
+    stopScheduler();
+    if (document.hidden) return;
+    state.timer = window.setInterval(tick, POLL_MS);
+    diagnostics.timerActive = true;
+  }
+
+  function handleVisibilityChange() {
+    diagnostics.pausedForVisibility = document.hidden;
+    if (document.hidden) {
+      stopScheduler();
+      return;
+    }
+    tick();
+    startScheduler();
+  }
+
   window.addEventListener('keydown', (event) => {
     if (event.code !== 'Digit6' || event.repeat || /input|textarea|select/i.test(event.target?.tagName || '')) return;
-    state.visible = !state.visible;
-    localStorage.setItem('neonblock:vehicle-health-visible', String(state.visible));
-    render();
+    setVisible(!state.visible);
   });
 
   window.addEventListener('pagehide', () => {
+    stopScheduler();
     makeReport();
     safeSave();
   });
 
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  window.NeonBlockVehicleHealth = {
+    getStatus() {
+      return {
+        ...diagnostics,
+        visible: state.visible,
+        lowHpTicks: state.lowHpTicks,
+        lastServiceAt: state.lastServiceAt,
+        lastReport: state.lastReport,
+        pollMs: POLL_MS
+      };
+    },
+    refresh() {
+      tick();
+      return this.getStatus();
+    },
+    saveReport: makeReport
+  };
+
   buildPanel();
   render();
-  setInterval(tick, 1200);
+  startScheduler();
 })();

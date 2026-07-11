@@ -1,5 +1,6 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_NAME = `${CACHE_PREFIX}v74`;
+const CACHE_NAME = `${CACHE_PREFIX}v75`;
+const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -110,6 +111,17 @@ async function cachedAppShell() {
   return (await caches.match('./index.html')) || (await caches.match('./'));
 }
 
+async function trimRuntimeCache(cache) {
+  const requests = await cache.keys();
+  const protectedUrls = new Set(
+    CORE_ASSETS.map((asset) => new URL(asset, self.registration.scope).href)
+  );
+  const removable = requests.filter((request) => !protectedUrls.has(request.url));
+  const overflow = removable.length - MAX_RUNTIME_ENTRIES;
+  if (overflow <= 0) return;
+  await Promise.all(removable.slice(0, overflow).map((request) => cache.delete(request)));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -149,7 +161,14 @@ self.addEventListener('fetch', (event) => {
         const requestUrl = new URL(request.url);
         if (requestUrl.origin === self.location.origin) {
           const copy = response.clone();
-          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {}));
+          event.waitUntil(
+            caches.open(CACHE_NAME)
+              .then(async (cache) => {
+                await cache.put(request, copy);
+                await trimRuntimeCache(cache);
+              })
+              .catch(() => {})
+          );
         }
         return response;
       });

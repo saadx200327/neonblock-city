@@ -5,8 +5,20 @@
   const REPORT_KEY = 'neonblock:banking:lastReport';
   const PANEL_ID = 'neonblock-banking-panel';
   const MOBILE_ID = 'btn-mobile-bank';
+  const RENDER_INTERVAL_MS = 500;
   const fmt = (n) => Math.round(Number(n) || 0).toLocaleString();
   const now = () => Date.now();
+
+  const diagnostics = {
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    lastStorageError: '',
+    renderCount: 0,
+    pausedAt: 0,
+    resumedAt: 0
+  };
+
+  let renderTimer = 0;
 
   const defaultState = () => ({
     visible: false,
@@ -20,9 +32,34 @@
     updatedAt: now()
   });
 
+  function safeRead(key, fallback = null) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastStorageError = error?.message || String(error);
+      return fallback;
+    }
+  }
+
+  function safeWrite(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastStorageError = error?.message || String(error);
+      return false;
+    }
+  }
+
   function loadState() {
-    try { return { ...defaultState(), ...(JSON.parse(localStorage.getItem(KEY) || '{}')) }; }
-    catch { return defaultState(); }
+    try {
+      return { ...defaultState(), ...(JSON.parse(safeRead(KEY, '{}') || '{}')) };
+    } catch {
+      return defaultState();
+    }
   }
 
   let state = loadState();
@@ -30,7 +67,7 @@
   function saveState() {
     state.balance = Math.max(0, Number(state.balance || 0));
     state.updatedAt = now();
-    localStorage.setItem(KEY, JSON.stringify(state));
+    return safeWrite(KEY, JSON.stringify(state));
   }
 
   function snapshot() {
@@ -191,6 +228,7 @@
     const interest = interestAvailable();
     return {
       feature: 'Neon Bank polish',
+      version: 2,
       walletCash: Math.floor(p?.cash || 0),
       bankBalance: Math.floor(state.balance || 0),
       totalDeposited: Math.floor(state.totalDeposited || 0),
@@ -202,16 +240,30 @@
       chunks: snap?.chunks ?? 0,
       interestReady: interest.ready,
       interestPayout: interest.payout,
+      storageReadFailures: diagnostics.storageReadFailures,
+      storageWriteFailures: diagnostics.storageWriteFailures,
+      lastStorageError: diagnostics.lastStorageError,
+      pollingActive: Boolean(renderTimer),
+      pageVisible: !document.hidden,
+      renderCount: diagnostics.renderCount,
       lastMessage: state.lastMessage,
       savedAt: new Date().toISOString()
     };
   }
 
+  function saveReport() {
+    return safeWrite(REPORT_KEY, JSON.stringify(report(), null, 2));
+  }
+
   async function copyReport() {
     const text = JSON.stringify(report(), null, 2);
-    localStorage.setItem(REPORT_KEY, text);
-    try { await navigator.clipboard?.writeText(text); state.lastMessage = 'Bank QA report copied.'; }
-    catch { state.lastMessage = 'Bank QA report saved locally.'; }
+    const stored = safeWrite(REPORT_KEY, text);
+    try {
+      await navigator.clipboard?.writeText(text);
+      state.lastMessage = 'Bank QA report copied.';
+    } catch {
+      state.lastMessage = stored ? 'Bank QA report saved locally.' : 'Bank QA report ready, but clipboard and storage are unavailable.';
+    }
     saveState();
     render();
   }
@@ -230,12 +282,45 @@
     panel.querySelector('#bank-withdraw').disabled = Number(state.balance || 0) < 100;
     panel.querySelector('#bank-interest').disabled = !interest.ready || interest.payout <= 0;
     panel.classList.toggle('hidden', !state.visible);
+    diagnostics.renderCount += 1;
   }
 
-  function loop() {
+  function stopScheduler() {
+    if (!renderTimer) return;
+    clearTimeout(renderTimer);
+    renderTimer = 0;
+    diagnostics.pausedAt = now();
+  }
+
+  function scheduleNext(delay = RENDER_INTERVAL_MS) {
+    stopScheduler();
+    if (document.hidden) return;
+    renderTimer = setTimeout(tick, delay);
+  }
+
+  function tick() {
+    renderTimer = 0;
+    if (document.hidden) return;
     cashGuard();
     render();
-    requestAnimationFrame(loop);
+    scheduleNext();
+  }
+
+  function refresh() {
+    cashGuard();
+    render();
+    if (!document.hidden) scheduleNext();
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopScheduler();
+      saveState();
+      saveReport();
+      return;
+    }
+    diagnostics.resumedAt = now();
+    refresh();
   }
 
   function boot() {
@@ -245,9 +330,26 @@
     document.addEventListener('keydown', (event) => {
       if (event.code === 'Digit0' && !event.repeat && !/INPUT|TEXTAREA|SELECT/.test(event.target?.tagName || '')) togglePanel();
     });
-    addEventListener('pagehide', () => { quickSave(false); localStorage.setItem(REPORT_KEY, JSON.stringify(report(), null, 2)); });
-    requestAnimationFrame(loop);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    addEventListener('pagehide', () => {
+      stopScheduler();
+      quickSave(false);
+      saveReport();
+    });
+    refresh();
   }
+
+  window.NeonBlockBanking = {
+    version: 2,
+    getStatus: () => ({
+      ...report(),
+      pausedAt: diagnostics.pausedAt,
+      resumedAt: diagnostics.resumedAt,
+      renderIntervalMs: RENDER_INTERVAL_MS
+    }),
+    refresh,
+    saveReport
+  };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

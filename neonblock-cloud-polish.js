@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'neonblock:cloud-polish:hidden';
   const LAST_TEST_KEY = 'neonblock:cloud-polish:last-test';
   const $ = (id) => document.getElementById(id);
+  let testInFlight = false;
 
   function getGame() {
     return window.NeonBlockGame || null;
@@ -77,6 +78,7 @@
       firebaseBridgePresent: Boolean(cloud),
       cloudEnabled: Boolean(cloud?.enabled),
       currentSlot: getSlot(snapshot),
+      cloudTestInFlight: testInFlight,
       localStorageAvailable: (() => {
         try { localStorage.setItem('neonblock:cloud-polish:probe', '1'); localStorage.removeItem('neonblock:cloud-polish:probe'); return true; } catch (_) { return false; }
       })(),
@@ -95,30 +97,66 @@
     $('cloud-polish-mode').textContent = mode;
     $('cloud-polish-slot').textContent = getSlot(snapshot);
     $('cloud-polish-last').textContent = describeLastTest();
+    const testButton = $('cloud-polish-test');
+    if (testButton) {
+      testButton.disabled = testInFlight;
+      testButton.textContent = testInFlight ? 'Testing…' : 'Test Cloud';
+      testButton.setAttribute('aria-busy', testInFlight ? 'true' : 'false');
+    }
     panel.dataset.mode = cloud?.enabled ? 'cloud' : 'local';
   }
 
+  function captureLocalSave(game, cloud, slot) {
+    if (!game?.saveState) return null;
+    const remoteSave = cloud?.save;
+    let intercepted = null;
+
+    if (cloud && typeof remoteSave === 'function') {
+      cloud.save = async (candidateSlot, data) => {
+        intercepted = { slot: candidateSlot, data };
+        return true;
+      };
+    }
+
+    try {
+      return game.saveState(slot) || intercepted?.data || null;
+    } finally {
+      if (cloud && typeof remoteSave === 'function') cloud.save = remoteSave;
+    }
+  }
+
   async function testCloud(panel) {
+    if (testInFlight) return;
     const game = getGame();
     const cloud = getCloud();
     const snapshot = game?.getSnapshot?.();
     const slot = getSlot(snapshot);
-    const data = game?.saveState?.(slot);
-    if (!cloud?.enabled || !cloud?.save) {
+
+    if (!cloud?.enabled || typeof cloud.save !== 'function') {
+      game?.saveState?.(slot);
       rememberTest({ ok: false, reason: 'cloud bridge unavailable', slot });
       updatePanel(panel);
       notify('Cloud unavailable; local save confirmed');
       return;
     }
+
+    testInFlight = true;
+    updatePanel(panel);
     try {
-      await cloud.save(slot, data || { at: Date.now(), slot });
+      const remoteSave = cloud.save;
+      const data = captureLocalSave(game, cloud, slot);
+      if (!data) throw new Error('Save API did not return data');
+      const saved = await remoteSave.call(cloud, slot, data);
+      if (saved === false) throw new Error('Cloud bridge declined save');
       rememberTest({ ok: true, reason: 'cloud save succeeded', slot });
       notify('Cloud save test passed');
     } catch (error) {
       rememberTest({ ok: false, reason: error?.message || 'cloud save failed', slot });
       notify('Cloud test failed; local save kept');
+    } finally {
+      testInFlight = false;
+      updatePanel(panel);
     }
-    updatePanel(panel);
   }
 
   function wirePanel(panel) {
@@ -171,6 +209,7 @@
       .cloud-polish-line { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; color: #c9f7ff; }
       .cloud-polish-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 9px; }
       #cloud-polish-panel button { min-height: 32px; border: 1px solid rgba(23, 243, 255, 0.36); border-radius: 10px; background: rgba(23, 243, 255, 0.12); color: #efffff; }
+      #cloud-polish-panel button:disabled { cursor: wait; opacity: 0.58; }
       #cloud-polish-note { margin: 8px 0 0; color: #9bbdcc; font-size: 12px; }
       #cloud-polish-panel.cloud-polish-hidden { width: auto; padding: 8px; }
       #cloud-polish-panel.cloud-polish-hidden .cloud-polish-line,

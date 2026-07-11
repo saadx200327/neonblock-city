@@ -7,6 +7,7 @@
   let panel;
   let brakeHeld = false;
   let lastWarn = 0;
+  let blockedPanelRepeats = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -157,7 +158,14 @@
 
   function wireKeys() {
     addEventListener('keydown', (event) => {
-      if (event.code === 'KeyK') togglePanel();
+      if (event.code === 'KeyK') {
+        if (event.repeat) {
+          blockedPanelRepeats++;
+          event.preventDefault();
+          return;
+        }
+        togglePanel();
+      }
       if ((event.code === 'KeyX' || event.code === 'Space') && getPlayer()?.activeVehicle) {
         event.preventDefault();
         brakeHeld = true;
@@ -192,6 +200,16 @@
     wireKeys();
     requestAnimationFrame(loop);
   }
+
+  window.NeonBlockDrivingPolish = {
+    version: 2,
+    getStatus: () => ({
+      brakeHeld,
+      panelHidden: Boolean(panel?.classList.contains('hidden')),
+      blockedPanelRepeats,
+      speedLimit: SPEED_LIMIT
+    })
+  };
 
   const ready = setInterval(() => {
     if (!window.NeonBlockGame?.getSnapshot) return;

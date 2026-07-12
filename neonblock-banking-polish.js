@@ -14,6 +14,7 @@
     storageWriteFailures: 0,
     lastStorageError: '',
     renderCount: 0,
+    skippedHiddenRenders: 0,
     pausedAt: 0,
     resumedAt: 0
   };
@@ -228,7 +229,7 @@
     const interest = interestAvailable();
     return {
       feature: 'Neon Bank polish',
-      version: 2,
+      version: 3,
       walletCash: Math.floor(p?.cash || 0),
       bankBalance: Math.floor(state.balance || 0),
       totalDeposited: Math.floor(state.totalDeposited || 0),
@@ -245,7 +246,9 @@
       lastStorageError: diagnostics.lastStorageError,
       pollingActive: Boolean(renderTimer),
       pageVisible: !document.hidden,
+      panelVisible: Boolean(state.visible),
       renderCount: diagnostics.renderCount,
+      skippedHiddenRenders: diagnostics.skippedHiddenRenders,
       lastMessage: state.lastMessage,
       savedAt: new Date().toISOString()
     };
@@ -268,8 +271,13 @@
     render();
   }
 
-  function render() {
+  function render(force = false) {
     const panel = makePanel();
+    panel.classList.toggle('hidden', !state.visible);
+    if (!state.visible && !force) {
+      diagnostics.skippedHiddenRenders += 1;
+      return;
+    }
     const p = player();
     const interest = interestAvailable();
     const cash = Math.floor(p?.cash || 0);
@@ -281,7 +289,6 @@
     panel.querySelector('#bank-deposit').disabled = cash < 100;
     panel.querySelector('#bank-withdraw').disabled = Number(state.balance || 0) < 100;
     panel.querySelector('#bank-interest').disabled = !interest.ready || interest.payout <= 0;
-    panel.classList.toggle('hidden', !state.visible);
     diagnostics.renderCount += 1;
   }
 
@@ -308,7 +315,7 @@
 
   function refresh() {
     cashGuard();
-    render();
+    render(true);
     if (!document.hidden) scheduleNext();
   }
 
@@ -340,7 +347,7 @@
   }
 
   window.NeonBlockBanking = {
-    version: 2,
+    version: 3,
     getStatus: () => ({
       ...report(),
       pausedAt: diagnostics.pausedAt,

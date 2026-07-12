@@ -7,14 +7,21 @@
   const MIN_Y = -8;
   const SCAN_INTERVAL_MS = 1200;
   const BOOT_INTERVAL_MS = 400;
+  const STABLE_PERSIST_INTERVAL_MS = 15000;
+  const STABLE_MOVE_THRESHOLD = 3;
+  const MAX_STABLE_AGE_MS = 1000 * 60 * 60 * 24 * 30;
   let hidden = false;
   let lastFixAt = 0;
   let stableSpot = null;
+  let lastPersistedSpot = null;
+  let lastStablePersistAt = 0;
   let lastReport = 'Watching player position';
   let storageFailures = 0;
   let scanTimer = 0;
   let bootTimer = 0;
   let scans = 0;
+  let stableWrites = 0;
+  let skippedStableWrites = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -55,10 +62,6 @@
     }
   }
 
-  function playerMesh() {
-    return snapshot()?.player?.mesh || null;
-  }
-
   function popup(text) {
     const el = $('reward-popup');
     if (!el) return;
@@ -72,20 +75,58 @@
     return Number.isFinite(value);
   }
 
+  function validStableSpot(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (!finite(value.x) || !finite(value.y) || !finite(value.z) || !finite(value.at)) return false;
+    if (value.y < 0.8 || Math.abs(value.x) > MAX_SAFE_COORDINATE || Math.abs(value.z) > MAX_SAFE_COORDINATE) return false;
+    if (value.at <= 0 || value.at > Date.now() + 60000 || Date.now() - value.at > MAX_STABLE_AGE_MS) return false;
+    return true;
+  }
+
+  function movedEnough(next, previous) {
+    if (!previous) return true;
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const dz = next.z - previous.z;
+    return (dx * dx) + (dy * dy) + (dz * dz) >= STABLE_MOVE_THRESHOLD * STABLE_MOVE_THRESHOLD;
+  }
+
+  function persistStableSpot(force = false) {
+    if (!stableSpot) return false;
+    const now = Date.now();
+    if (!force && now - lastStablePersistAt < STABLE_PERSIST_INTERVAL_MS && !movedEnough(stableSpot, lastPersistedSpot)) {
+      skippedStableWrites += 1;
+      return false;
+    }
+    if (!writeStorage(`${STORE_KEY}:stable`, JSON.stringify(stableSpot))) return false;
+    lastPersistedSpot = { ...stableSpot };
+    lastStablePersistAt = now;
+    stableWrites += 1;
+    return true;
+  }
+
   function rememberStableSpot(snap) {
     const pos = snap?.player?.mesh?.position;
     if (!pos || !finite(pos.x) || !finite(pos.y) || !finite(pos.z)) return;
     if (pos.y < 0.8 || Math.abs(pos.x) > MAX_SAFE_COORDINATE || Math.abs(pos.z) > MAX_SAFE_COORDINATE) return;
     stableSpot = { x: pos.x, y: Math.max(1, pos.y), z: pos.z, at: Date.now() };
-    writeStorage(`${STORE_KEY}:stable`, JSON.stringify(stableSpot));
+    persistStableSpot(false);
   }
 
   function loadStableSpot() {
     if (stableSpot) return stableSpot;
     try {
       const parsed = JSON.parse(readStorage(`${STORE_KEY}:stable`, 'null') || 'null');
-      if (parsed && finite(parsed.x) && finite(parsed.y) && finite(parsed.z)) stableSpot = parsed;
-    } catch (_) {}
+      if (validStableSpot(parsed)) {
+        stableSpot = parsed;
+        lastPersistedSpot = { ...parsed };
+        lastStablePersistAt = parsed.at;
+      } else if (parsed) {
+        lastReport = 'Ignored invalid or stale recovery point';
+      }
+    } catch (_) {
+      lastReport = 'Ignored unreadable recovery point';
+    }
     return stableSpot;
   }
 
@@ -177,6 +218,7 @@
   function updatePanel() {
     const panel = ensurePanel();
     panel.style.display = hidden ? 'none' : 'block';
+    if (hidden) return;
     const snap = snapshot();
     const pos = snap?.player?.mesh?.position;
     const status = $('world-safety-status');
@@ -205,7 +247,7 @@
     scanTimer = setTimeout(() => {
       scanTimer = 0;
       scan();
-      updatePanel();
+      if (!hidden) updatePanel();
       scheduleScan();
     }, delay);
   }
@@ -223,41 +265,52 @@
     scheduleScan();
   }
 
+  function saveBeforeBackground() {
+    persistStableSpot(true);
+    stopScheduler();
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      stopScheduler();
+      saveBeforeBackground();
       return;
     }
     boot();
   });
 
+  window.addEventListener('pagehide', saveBeforeBackground);
+
   document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyZ' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.code !== 'KeyZ' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     const tag = event.target?.tagName?.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
     togglePanel();
   });
 
   window.addEventListener('error', (event) => {
     lastReport = `Runtime warning: ${event.message || 'script error'}`;
-    updatePanel();
+    if (!hidden) updatePanel();
   });
 
   window.NeonBlockWorldSafety = {
     recover,
     scan,
     getStableSpot: () => loadStableSpot(),
+    saveNow: () => persistStableSpot(true),
     refresh: () => {
       scan();
       updatePanel();
     },
     getStatus: () => ({
-      version: 2,
+      version: 3,
       maxSafeCoordinate: MAX_SAFE_COORDINATE,
       lastFixAt,
       lastReport,
       storageFailures,
       scans,
+      stableWrites,
+      skippedStableWrites,
+      lastStablePersistAt,
       active: Boolean(scanTimer || bootTimer),
       pausedForVisibility: document.hidden
     })

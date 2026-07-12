@@ -9,7 +9,10 @@
     lastHealthCheck: 0,
     warnedLandscape: false,
     preflightComplete: false,
-    booted: false
+    booted: false,
+    storageAvailable: true,
+    storageErrors: 0,
+    lastStorageError: null
   };
 
   function popup(message, duration = 1700) {
@@ -26,6 +29,44 @@
     if (target) target.textContent = message || 'none';
   }
 
+  function noteStorageError(error) {
+    state.storageAvailable = false;
+    state.storageErrors += 1;
+    state.lastStorageError = error?.message || String(error || 'storage unavailable');
+    setHudError(`local save unavailable: ${state.lastStorageError}`);
+  }
+
+  function storageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      noteStorageError(error);
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      state.storageAvailable = true;
+      return true;
+    } catch (error) {
+      noteStorageError(error);
+      return false;
+    }
+  }
+
+  function storageRemove(key) {
+    try {
+      localStorage.removeItem(key);
+      state.storageAvailable = true;
+      return true;
+    } catch (error) {
+      noteStorageError(error);
+      return false;
+    }
+  }
+
   function parseSave(raw) {
     if (!raw) return null;
     try {
@@ -38,12 +79,16 @@
   }
 
   function quarantineCorruptSave(slot) {
+    if (!VALID_SLOTS.includes(slot)) return false;
     const key = `${SAVE_PREFIX}${slot}`;
-    const raw = localStorage.getItem(key);
+    const raw = storageGet(key);
     if (!raw || parseSave(raw)) return false;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    localStorage.setItem(`${key}:corrupt:${stamp}`, raw.slice(0, 200000));
-    localStorage.removeItem(key);
+    const backedUp = storageSet(`${key}:corrupt:${stamp}`, raw.slice(0, 200000));
+    if (!backedUp || !storageRemove(key)) {
+      setHudError(`corrupt ${slot} detected; backup unavailable`);
+      return false;
+    }
     setHudError(`corrupt ${slot} moved aside`);
     return true;
   }
@@ -52,25 +97,22 @@
     if (state.preflightComplete) return false;
     state.preflightComplete = true;
     let repaired = false;
-    try {
-      for (const slot of VALID_SLOTS) repaired = quarantineCorruptSave(slot) || repaired;
-      if (repaired) popup('A corrupt save was backed up and skipped', 2600);
-    } catch (error) {
-      setHudError(`save preflight failed: ${error.message || error}`);
-    }
+    for (const slot of VALID_SLOTS) repaired = quarantineCorruptSave(slot) || repaired;
+    if (repaired) popup('A corrupt save was backed up and skipped', 2600);
     return repaired;
   }
 
   function currentSlot() {
-    return $('debug-save-slot')?.textContent?.trim() || 'slot1';
+    const slot = $('debug-save-slot')?.textContent?.trim();
+    return VALID_SLOTS.includes(slot) ? slot : 'slot1';
   }
 
   function latestUsableSave() {
     const candidates = [];
     for (const slot of VALID_SLOTS) {
-      const parsed = parseSave(localStorage.getItem(`${SAVE_PREFIX}${slot}`));
+      const parsed = parseSave(storageGet(`${SAVE_PREFIX}${slot}`));
       if (parsed) candidates.push({ slot, parsed });
-      const hidden = parseSave(localStorage.getItem(`${SAVE_PREFIX}${slot}:last-hidden-copy`));
+      const hidden = parseSave(storageGet(`${SAVE_PREFIX}${slot}:last-hidden-copy`));
       if (hidden) candidates.push({ slot, parsed: hidden });
     }
     candidates.sort((a, b) => (b.parsed.at || 0) - (a.parsed.at || 0));
@@ -86,7 +128,7 @@
     exportLatest.textContent = 'Export Latest Good Save';
     exportLatest.addEventListener('click', () => {
       const latest = latestUsableSave();
-      if (!latest) return popup('No usable save found');
+      if (!latest) return popup(state.storageAvailable ? 'No usable save found' : 'Local saves are unavailable');
       const box = $('export-json');
       if (box) box.value = JSON.stringify(latest.parsed, null, 2);
       popup(`Latest ${latest.slot} save copied`);
@@ -97,7 +139,7 @@
     loadLatest.textContent = 'Load Latest Good Save';
     loadLatest.addEventListener('click', () => {
       const latest = latestUsableSave();
-      if (!latest || !window.NeonBlockGame?.loadState) return popup('No usable save found');
+      if (!latest || !window.NeonBlockGame?.loadState) return popup(state.storageAvailable ? 'No usable save found' : 'Local saves are unavailable');
       window.NeonBlockGame.loadState(latest.slot, latest.parsed);
       popup(`Loaded latest ${latest.slot}`);
     });
@@ -116,7 +158,7 @@
       state.lastFallFix = now;
       player.mesh.position.set(0, 4, 0);
       player.vel?.set?.(0, 0, 0);
-      game.saveState?.(currentSlot());
+      try { game.saveState?.(currentSlot()); } catch (error) { noteStorageError(error); }
       setHudError('fall-through recovered');
       popup('Recovered player position', 2200);
     }
@@ -160,10 +202,22 @@
 
   function addPageLifecycleSave() {
     const save = () => {
-      try { window.NeonBlockGame?.saveState?.(currentSlot()); } catch (error) { setHudError(error.message || String(error)); }
+      try { window.NeonBlockGame?.saveState?.(currentSlot()); } catch (error) { noteStorageError(error); }
     };
     window.addEventListener('pagehide', save);
     document.addEventListener('freeze', save);
+  }
+
+  function getStatus() {
+    return {
+      version: 3,
+      booted: state.booted,
+      preflightComplete: state.preflightComplete,
+      storageAvailable: state.storageAvailable,
+      storageErrors: state.storageErrors,
+      lastStorageError: state.lastStorageError,
+      latestSave: latestUsableSave()?.slot || null
+    };
   }
 
   function bootAfterGameReady() {
@@ -176,7 +230,13 @@
       addViewportGuards();
       addPageLifecycleSave();
       requestAnimationFrame(watchRuntimeHealth);
-      window.NeonBlockRuntimeGuard = { version: 2, latestUsableSave, quarantineCorruptSave, repairSavesBeforeGameLoad };
+      window.NeonBlockRuntimeGuard = {
+        version: 3,
+        latestUsableSave,
+        quarantineCorruptSave,
+        repairSavesBeforeGameLoad,
+        getStatus
+      };
     };
     wait();
   }

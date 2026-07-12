@@ -7,12 +7,47 @@
   const MOBILE_BUTTON_ID = 'btn-mobile-ride';
   const OPEN_KEY = 'neonblock:ride-finder-open';
   const CHUNK_SIZE = 48;
+  const REFRESH_MS = 4000;
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    refreshes: 0,
+    timerActive: false,
+    lastError: null
+  };
   const state = loadState();
   let panel;
   let statusEl;
   let targetEl;
   let reportEl;
+  let refreshTimer = 0;
+
+  function recordError(error) {
+    diagnostics.lastError = error?.message || String(error || 'Unknown error');
+  }
+
+  function readStorage(key, fallback = null) {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      recordError(error);
+      return fallback;
+    }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      recordError(error);
+      return false;
+    }
+  }
 
   function loadState() {
     try {
@@ -21,23 +56,24 @@
         assists: 0,
         lastTarget: null,
         lastReport: null,
-        ...(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'))
+        ...(JSON.parse(readStorage(STORAGE_KEY, '{}') || '{}'))
       };
     } catch (error) {
+      recordError(error);
       return { scans: 0, assists: 0, lastTarget: null, lastReport: { warning: error.message } };
     }
   }
 
   function saveState(reason = 'auto') {
     state.lastReport = buildReport(reason);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    localStorage.setItem(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
-    try { window.NeonBlockGame?.saveState?.(); } catch (error) { state.lastReport.saveWarning = error.message; }
+    writeStorage(STORAGE_KEY, JSON.stringify(state));
+    writeStorage(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
+    try { window.NeonBlockGame?.saveState?.(); } catch (error) { state.lastReport.saveWarning = error.message; recordError(error); }
     return state.lastReport;
   }
 
   function snapshot() {
-    try { return window.NeonBlockGame?.getSnapshot?.() || null; } catch { return null; }
+    try { return window.NeonBlockGame?.getSnapshot?.() || null; } catch (error) { recordError(error); return null; }
   }
 
   function player(snap = snapshot()) {
@@ -136,6 +172,8 @@
       activeVehicle: player(snap)?.activeVehicle?.userData?.name || null,
       streamedVehicles: snap?.vehicles ?? 0,
       chunks: snap?.chunks ?? 0,
+      scheduler: { active: diagnostics.timerActive, hidden: document.hidden, refreshes: diagnostics.refreshes },
+      storage: { readFailures: diagnostics.storageReadFailures, writeFailures: diagnostics.storageWriteFailures, lastError: diagnostics.lastError },
       nearestPredictedRide: target ? {
         id: target.id,
         name: target.name,
@@ -198,7 +236,7 @@
     injectStyles();
     panel = document.createElement('section');
     panel.id = PANEL_ID;
-    panel.className = localStorage.getItem(OPEN_KEY) === '1' ? '' : 'hidden';
+    panel.className = readStorage(OPEN_KEY, '0') === '1' ? '' : 'hidden';
     panel.innerHTML = `
       <h3>Ride Finder <span style="float:right;font-size:12px;color:#ffd4de">F9</span></h3>
       <p id="ride-finder-status">Scanning streamed roads...</p>
@@ -237,16 +275,38 @@
     rail.insertBefore(button, rail.firstChild);
   }
 
+  function stopScheduler() {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = 0;
+    diagnostics.timerActive = false;
+  }
+
+  function scheduleRefresh() {
+    stopScheduler();
+    if (document.hidden || panel?.classList.contains('hidden')) return;
+    diagnostics.timerActive = true;
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = 0;
+      diagnostics.timerActive = false;
+      if (!document.hidden && !panel?.classList.contains('hidden')) {
+        render();
+        scheduleRefresh();
+      }
+    }, REFRESH_MS);
+  }
+
   function togglePanel() {
     buildPanel();
     const hidden = panel.classList.toggle('hidden');
-    localStorage.setItem(OPEN_KEY, hidden ? '0' : '1');
+    writeStorage(OPEN_KEY, hidden ? '0' : '1');
     if (!hidden && !state.lastTarget) state.lastTarget = findNearestRide();
     render();
+    scheduleRefresh();
   }
 
   function render() {
     if (!panel) return;
+    diagnostics.refreshes += 1;
     const target = state.lastTarget || findNearestRide();
     const snap = snapshot();
     statusEl.textContent = target
@@ -261,12 +321,15 @@
     reportEl.textContent = JSON.stringify(buildReport('render'), null, 2);
   }
 
+  function refresh() {
+    if (!document.hidden && !panel?.classList.contains('hidden')) render();
+    scheduleRefresh();
+    return buildReport('manual refresh');
+  }
+
   function boot() {
     buildPanel();
     addMobileButton();
-    setInterval(() => {
-      if (!panel?.classList.contains('hidden')) render();
-    }, 4000);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'F9' && !event.repeat) {
         event.preventDefault();
@@ -274,11 +337,26 @@
       }
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) saveState('hidden-page ride finder backup');
+      if (document.hidden) {
+        stopScheduler();
+        saveState('hidden-page ride finder backup');
+      } else {
+        refresh();
+      }
     });
-    window.addEventListener('pagehide', () => saveState('pagehide ride finder backup'));
+    window.addEventListener('pagehide', () => {
+      stopScheduler();
+      saveState('pagehide ride finder backup');
+    });
     render();
+    scheduleRefresh();
   }
+
+  window.NeonBlockRideFinder = {
+    getStatus: () => ({ ...diagnostics, panelOpen: Boolean(panel && !panel.classList.contains('hidden')), hidden: document.hidden }),
+    refresh,
+    saveNow: () => saveState('manual API save')
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

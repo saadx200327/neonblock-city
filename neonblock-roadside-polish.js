@@ -2,33 +2,65 @@
   'use strict';
 
   const STORAGE_KEY = 'neonblock:roadside-polish';
+  const REPORT_KEY = 'neonblock:roadside-polish:qa';
   const CHUNK_SIZE = 48;
   const ROAD_HALF_WIDTH = 4.4;
   const SNAP_COOLDOWN_MS = 3500;
+  const TICK_MS = 1000;
   const state = loadState();
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    ticks: 0,
+    renders: 0,
+    lastStorageError: '',
+    lastTickAt: 0
+  };
   let panel;
+  let timer = 0;
   let lastPos = null;
   let lastMovedAt = performance.now();
   let lastSnapAt = 0;
   let lastRoadStatus = 'checking';
 
+  function safeRead(key, fallback = null) {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastStorageError = String(error?.message || error);
+      return fallback;
+    }
+  }
+
+  function safeWrite(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastStorageError = String(error?.message || error);
+      return false;
+    }
+  }
+
   function loadState() {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      const parsed = JSON.parse(safeRead(STORAGE_KEY, '{}') || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
     } catch (_) {
       return {};
     }
   }
 
   function persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        hidden: !!state.hidden,
-        snapCount: state.snapCount || 0,
-        lastReport: state.lastReport || '',
-        lastRoadStatus
-      }));
-    } catch (_) {}
+    safeWrite(STORAGE_KEY, JSON.stringify({
+      hidden: !!state.hidden,
+      snapCount: Math.max(0, Number(state.snapCount) || 0),
+      lastReport: typeof state.lastReport === 'string' ? state.lastReport : '',
+      lastRoadStatus
+    }));
   }
 
   function api() {
@@ -70,7 +102,7 @@
     const target = pos.clone ? pos.clone() : { ...pos };
     if (metrics.preferredAxis === 'x') target.x = Math.round(pos.x / CHUNK_SIZE) * CHUNK_SIZE;
     else target.z = Math.round(pos.z / CHUNK_SIZE) * CHUNK_SIZE;
-    target.y = Math.max(1.25, Math.min(pos.y || 1.25, 3));
+    target.y = Math.max(1.25, Math.min(Number(pos.y) || 1.25, 3));
     return target;
   }
 
@@ -89,33 +121,52 @@
     if (p.activeVehicle) {
       p.activeVehicle.position.copy?.(p.mesh.position);
       p.activeVehicle.position.y = 0.65;
-      p.activeVehicle.userData.gas = Math.max(12, p.activeVehicle.userData.gas || 0);
+      p.activeVehicle.userData.gas = Math.max(12, Number(p.activeVehicle.userData.gas) || 0);
     }
-    state.snapCount = (state.snapCount || 0) + 1;
+    lastPos = p.mesh.position.clone?.() || null;
+    lastMovedAt = performance.now();
+    state.snapCount = Math.max(0, Number(state.snapCount) || 0) + 1;
     api()?.saveState?.(p.slot || 'slot1');
     persist();
     popup(reason);
     return true;
   }
 
-  function copyReport() {
+  function buildReport() {
     const snap = snapshot();
     const p = snap?.player;
     const pos = p?.mesh?.position;
     const metrics = pos ? roadMetrics(pos) : null;
-    const report = [
+    return [
       'NeonBlock Roadside QA Report',
       `time=${new Date().toISOString()}`,
+      `version=${diagnostics.version}`,
       `status=${lastRoadStatus}`,
       `pos=${pos ? `${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)}` : 'unknown'}`,
       `onRoad=${metrics ? metrics.onRoad : 'unknown'}`,
       `distanceToRoad=${metrics ? metrics.distanceToRoad.toFixed(1) : 'unknown'}`,
       `chunks=${snap?.chunks ?? 'unknown'}`,
       `vehicle=${p?.activeVehicle?.userData?.name || 'none'}`,
-      `snaps=${state.snapCount || 0}`
+      `snaps=${Math.max(0, Number(state.snapCount) || 0)}`,
+      `visible=${!document.hidden}`,
+      `scheduler=${timer ? 'running' : 'stopped'}`,
+      `ticks=${diagnostics.ticks}`,
+      `renders=${diagnostics.renders}`,
+      `storageReadFailures=${diagnostics.storageReadFailures}`,
+      `storageWriteFailures=${diagnostics.storageWriteFailures}`
     ].join('\n');
+  }
+
+  function saveReport() {
+    const report = buildReport();
     state.lastReport = report;
     persist();
+    safeWrite(REPORT_KEY, report);
+    return report;
+  }
+
+  function copyReport() {
+    const report = saveReport();
     navigator.clipboard?.writeText(report).then(() => popup('Roadside report copied')).catch(() => popup('Report ready in panel'));
     render(report);
   }
@@ -142,7 +193,7 @@
     panel.querySelector('[data-road-snap]').addEventListener('click', () => snapToRoad());
     panel.querySelector('[data-road-save]').addEventListener('click', () => { api()?.saveState?.(); popup('Roadside save complete'); });
     panel.querySelector('[data-road-copy]').addEventListener('click', copyReport);
-    togglePanel(!state.hidden);
+    panel.classList.toggle('hidden', !!state.hidden);
     return panel;
   }
 
@@ -163,21 +214,24 @@
     ensurePanel();
     state.hidden = typeof force === 'boolean' ? !force : !state.hidden;
     panel.classList.toggle('hidden', !!state.hidden);
+    if (!state.hidden) render();
     persist();
   }
 
   function render(extraText = '') {
+    if (state.hidden) return;
     ensurePanel();
     const body = panel.querySelector('[data-road-body]');
     const snap = snapshot();
     const p = snap?.player;
     const pos = p?.mesh?.position;
     if (!body || !pos) {
-      body.textContent = 'Runtime not ready yet.';
+      if (body) body.textContent = 'Runtime not ready yet.';
       return;
     }
+    diagnostics.renders += 1;
     const metrics = roadMetrics(pos);
-    const moving = lastPos ? pos.distanceTo?.(lastPos) > 0.04 : true;
+    const moving = lastPos ? (pos.distanceTo?.(lastPos) || 0) > 0.04 : true;
     const cls = metrics.onRoad ? 'roadside-good' : metrics.distanceToRoad > 16 ? 'roadside-bad' : 'roadside-warn';
     lastRoadStatus = metrics.onRoad ? 'on road' : metrics.distanceToRoad > 16 ? 'far from road' : 'near road';
     body.innerHTML = `
@@ -185,7 +239,7 @@
       <div>Road distance: ${metrics.distanceToRoad.toFixed(1)} blocks</div>
       <div>Movement: ${moving ? 'moving' : 'idle/stuck watch'}</div>
       <div>Vehicle: ${p.activeVehicle?.userData?.name || 'none'}</div>
-      <div>Road snaps: ${state.snapCount || 0}</div>
+      <div>Road snaps: ${Math.max(0, Number(state.snapCount) || 0)}</div>
       ${extraText ? `<pre style="white-space:pre-wrap;max-height:120px;overflow:auto">${extraText.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>` : ''}`;
   }
 
@@ -193,7 +247,9 @@
     const p = player();
     const pos = p?.mesh?.position;
     if (!pos) return;
-    if (lastPos && pos.distanceTo?.(lastPos) > 0.12) lastMovedAt = performance.now();
+    diagnostics.ticks += 1;
+    diagnostics.lastTickAt = Date.now();
+    if (lastPos && (pos.distanceTo?.(lastPos) || 0) > 0.12) lastMovedAt = performance.now();
     const metrics = roadMetrics(pos);
     const stuckOffRoad = !metrics.onRoad && metrics.distanceToRoad > 20 && performance.now() - lastMovedAt > 12000;
     const unsafeY = !Number.isFinite(pos.y) || pos.y < -1;
@@ -202,14 +258,68 @@
     lastPos = pos.clone?.() || null;
   }
 
+  function tick() {
+    safetyTick();
+    render();
+  }
+
+  function stopScheduler() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = 0;
+  }
+
+  function startScheduler() {
+    stopScheduler();
+    if (document.hidden) return;
+    tick();
+    timer = setInterval(tick, TICK_MS);
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      stopScheduler();
+      saveReport();
+      lastPos = null;
+      return;
+    }
+    lastMovedAt = performance.now();
+    startScheduler();
+  }
+
+  function isEditableTarget(target) {
+    return !!target?.closest?.('input,textarea,select,[contenteditable="true"]');
+  }
+
+  function getStatus() {
+    return {
+      ...diagnostics,
+      hidden: !!state.hidden,
+      visible: !document.hidden,
+      schedulerRunning: !!timer,
+      roadStatus: lastRoadStatus,
+      snapCount: Math.max(0, Number(state.snapCount) || 0)
+    };
+  }
+
   function boot() {
     ensurePanel();
     ensureMobileButton();
     document.addEventListener('keydown', (event) => {
-      if (event.code === 'Quote' && !event.repeat) togglePanel();
+      if (event.code === 'Quote' && !event.repeat && !isEditableTarget(event.target)) togglePanel();
     });
-    setInterval(() => { render(); safetyTick(); }, 1000);
-    addEventListener('pagehide', persist);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    addEventListener('pagehide', () => {
+      stopScheduler();
+      saveReport();
+    });
+    startScheduler();
+    window.NeonBlockRoadside = Object.freeze({
+      getStatus,
+      refresh: tick,
+      saveNow: saveReport,
+      snapToRoad
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v91';
+const CACHE_VERSION = 'v92';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
@@ -143,7 +143,7 @@ async function trimRuntimeCache(cache) {
 function isCacheableResponse(response) {
   if (!response || !response.ok || response.type === 'opaque') return false;
   const cacheControl = response.headers.get('Cache-Control') || '';
-  return !/\bno-store\b/i.test(cacheControl);
+  return !/\b(?:no-store|private)\b/i.test(cacheControl);
 }
 
 self.addEventListener('fetch', (event) => {
@@ -155,7 +155,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const response = (await event.preloadResponse) || (await fetch(request));
-        if (response && response.ok) {
+        if (isCacheableResponse(response)) {
           const copy = response.clone();
           event.waitUntil(
             caches.open(CACHE_NAME)
@@ -165,7 +165,8 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
 
-        return (await cachedAppShell()) || response;
+        if (response) return response;
+        return await cachedAppShell();
       } catch (error) {
         return (await cachedAppShell()) || new Response(
           'NeonBlock City is offline and its app shell is not cached yet.',

@@ -9,6 +9,35 @@
   let sprintPointer = null;
   let joystickPointer = null;
   let blockedJoystickPointers = 0;
+  let fallbackPointerEvents = 0;
+  let releaseErrors = 0;
+
+  function createPointerRelease(type, pointerId) {
+    try {
+      return new PointerEvent(type, {
+        bubbles: false,
+        pointerId,
+        pointerType: 'touch'
+      });
+    } catch (_) {
+      fallbackPointerEvents += 1;
+      const event = new Event(type, { bubbles: false });
+      try { Object.defineProperty(event, 'pointerId', { value: pointerId }); } catch (_) {}
+      try { Object.defineProperty(event, 'pointerType', { value: 'touch' }); } catch (_) {}
+      return event;
+    }
+  }
+
+  function dispatchRelease(target, type, pointerId) {
+    try {
+      target.dispatchEvent(createPointerRelease(type, pointerId));
+      return true;
+    } catch (error) {
+      releaseErrors += 1;
+      console.warn('[NeonBlock] Mobile pointer release failed.', error);
+      return false;
+    }
+  }
 
   function releaseSprint(pointerId = null) {
     if (pointerId !== null && sprintPointer !== pointerId) return;
@@ -19,11 +48,7 @@
 
     // The core game listens for pointerup on this button. Dispatch a safe
     // synthetic release when the browser ends the gesture outside the button.
-    sprintButton.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles: false,
-      pointerId: releasedPointer,
-      pointerType: 'touch'
-    }));
+    dispatchRelease(sprintButton, 'pointerup', releasedPointer);
   }
 
   function releaseJoystick(pointerId = null) {
@@ -32,11 +57,7 @@
 
     // Keep the owner set while dispatching so capture-phase ownership checks
     // allow the core game's reset handler to receive this synthetic release.
-    joystick.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles: false,
-      pointerId: releasedPointer,
-      pointerType: 'touch'
-    }));
+    dispatchRelease(joystick, 'pointerup', releasedPointer);
     joystickPointer = null;
     if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
   }
@@ -119,11 +140,13 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
-    version: 2,
+    version: 3,
     getStatus: () => ({
       sprintPointer,
       joystickPointer,
       blockedJoystickPointers,
+      fallbackPointerEvents,
+      releaseErrors,
       installed: true
     }),
     releaseAll: () => {

@@ -3,7 +3,20 @@
 
   const STORAGE_KEY = 'neonblock:pwa-polish:hidden';
   const REPORT_KEY = 'neonblock:pwa-polish:last-report';
+  const REFRESH_MS = 15000;
   const $ = (id) => document.getElementById(id);
+
+  const diagnostics = {
+    refreshes: 0,
+    skippedHiddenRefreshes: 0,
+    storageReadErrors: 0,
+    storageWriteErrors: 0,
+    lastRefreshAt: null,
+    lastError: null
+  };
+
+  let refreshTimer = 0;
+  let refreshInFlight = null;
 
   function make(tag, attrs = {}, text = '') {
     const el = document.createElement(tag);
@@ -18,6 +31,27 @@
 
   function fmtBool(value) {
     return value ? 'yes' : 'no';
+  }
+
+  function storageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      diagnostics.storageReadErrors += 1;
+      diagnostics.lastError = String(error?.message || error);
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteErrors += 1;
+      diagnostics.lastError = String(error?.message || error);
+      return false;
+    }
   }
 
   function toast(message) {
@@ -38,6 +72,7 @@
         return true;
       }
     } catch (error) {
+      diagnostics.lastError = String(error?.message || error);
       console.warn('[NeonBlock PWA] save failed', error);
     }
     return false;
@@ -45,15 +80,28 @@
 
   function getCacheNames() {
     if (!('caches' in window)) return Promise.resolve([]);
-    return caches.keys().catch(() => []);
+    return caches.keys().catch((error) => {
+      diagnostics.lastError = String(error?.message || error);
+      return [];
+    });
   }
 
   async function buildReport() {
     const cacheNames = await getCacheNames();
     const swController = Boolean(navigator.serviceWorker?.controller);
-    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration().catch(() => null) : null;
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration().catch((error) => {
+      diagnostics.lastError = String(error?.message || error);
+      return null;
+    }) : null;
     const apiReady = Boolean(window.NeonBlockAPI?.getState);
-    const state = apiReady ? window.NeonBlockAPI.getState() : null;
+    let state = null;
+    if (apiReady) {
+      try {
+        state = window.NeonBlockAPI.getState();
+      } catch (error) {
+        diagnostics.lastError = String(error?.message || error);
+      }
+    }
     const externalScripts = [...document.scripts]
       .map((script) => script.src)
       .filter((src) => src && !src.startsWith(location.origin));
@@ -87,7 +135,7 @@
         lots: state.lots?.length
       } : null
     };
-    localStorage.setItem(REPORT_KEY, JSON.stringify(report));
+    storageSet(REPORT_KEY, JSON.stringify(report));
     return report;
   }
 
@@ -123,54 +171,94 @@
     `;
     document.body.appendChild(panel);
 
-    const hidden = localStorage.getItem(STORAGE_KEY) === '1';
+    const hidden = storageGet(STORAGE_KEY) === '1';
     if (hidden) panel.style.transform = 'translateY(calc(100% - 38px))';
 
     $('pwa-toggle')?.addEventListener('click', () => {
-      const nextHidden = localStorage.getItem(STORAGE_KEY) !== '1';
-      localStorage.setItem(STORAGE_KEY, nextHidden ? '1' : '0');
+      const nextHidden = storageGet(STORAGE_KEY) !== '1';
+      storageSet(STORAGE_KEY, nextHidden ? '1' : '0');
       panel.style.transform = nextHidden ? 'translateY(calc(100% - 38px))' : '';
     });
     $('pwa-save')?.addEventListener('click', () => saveNow('PWA/offline test'));
     $('pwa-update')?.addEventListener('click', async () => {
       saveNow('update check');
-      const reg = await navigator.serviceWorker?.getRegistration?.().catch(() => null);
+      const reg = await navigator.serviceWorker?.getRegistration?.().catch((error) => {
+        diagnostics.lastError = String(error?.message || error);
+        return null;
+      });
       if (reg?.update) {
-        await reg.update().catch(() => null);
+        await reg.update().catch((error) => {
+          diagnostics.lastError = String(error?.message || error);
+        });
         toast(reg.waiting ? 'Update ready. Reload to apply.' : 'PWA cache checked.');
       } else toast('Service worker is not active yet.');
-      refresh();
+      refresh(true);
     });
     $('pwa-report')?.addEventListener('click', async () => downloadReport(await buildReport()));
 
     window.addEventListener('keydown', (event) => {
-      if (event.code !== 'KeyI' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.repeat || event.code !== 'KeyI' || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target;
-      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
       event.preventDefault();
       $('pwa-toggle')?.click();
     });
   }
 
-  async function refresh() {
+  async function refresh(force = false) {
+    if (document.hidden && !force) {
+      diagnostics.skippedHiddenRefreshes += 1;
+      return null;
+    }
+    if (refreshInFlight) return refreshInFlight;
     const status = $('pwa-status');
     const warning = $('pwa-warning');
-    if (!status || !warning) return;
-    const report = await buildReport();
-    status.textContent = `Online: ${fmtBool(report.online)} · SW: ${fmtBool(report.serviceWorkerControlled)} · Cache: ${report.cacheNames.length} · Installed: ${fmtBool(report.standalone)}`;
-    const warnings = [];
-    if (!report.serviceWorkerSupported) warnings.push('Browser does not support service workers.');
-    else if (!report.serviceWorkerControlled) warnings.push('Reload once after first visit so the PWA cache controls this page.');
-    if (report.externalScripts.length) warnings.push('First launch needs network for Three.js CDN; after a successful load, SW can cache fetched assets.');
-    if (!report.runtimeReady) warnings.push('Runtime API not ready yet; wait for loading screen to finish before testing offline.');
-    warning.textContent = warnings.join(' ');
+    if (!status || !warning) return null;
+
+    refreshInFlight = (async () => {
+      const report = await buildReport();
+      status.textContent = `Online: ${fmtBool(report.online)} · SW: ${fmtBool(report.serviceWorkerControlled)} · Cache: ${report.cacheNames.length} · Installed: ${fmtBool(report.standalone)}`;
+      const warnings = [];
+      if (!report.serviceWorkerSupported) warnings.push('Browser does not support service workers.');
+      else if (!report.serviceWorkerControlled) warnings.push('Reload once after first visit so the PWA cache controls this page.');
+      if (report.externalScripts.length) warnings.push('First launch needs network for external scripts; after a successful load, the service worker may cache fetched assets.');
+      if (!report.runtimeReady) warnings.push('Runtime API not ready yet; wait for loading screen to finish before testing offline.');
+      warning.textContent = warnings.join(' ');
+      diagnostics.refreshes += 1;
+      diagnostics.lastRefreshAt = report.generatedAt;
+      return report;
+    })().catch((error) => {
+      diagnostics.lastError = String(error?.message || error);
+      console.warn('[NeonBlock PWA] refresh failed', error);
+      return null;
+    }).finally(() => {
+      refreshInFlight = null;
+    });
+
+    return refreshInFlight;
+  }
+
+  function stopScheduler() {
+    if (!refreshTimer) return;
+    clearTimeout(refreshTimer);
+    refreshTimer = 0;
+  }
+
+  function scheduleRefresh(delay = REFRESH_MS) {
+    stopScheduler();
+    if (document.hidden) return;
+    refreshTimer = setTimeout(async () => {
+      refreshTimer = 0;
+      await refresh();
+      scheduleRefresh();
+    }, delay);
   }
 
   function bindServiceWorkerUpdates() {
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       toast('PWA cache updated. Save is safe; reload if visuals look stale.');
-      refresh();
+      refresh(true);
     });
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg) return;
@@ -180,25 +268,46 @@
         worker.addEventListener('statechange', () => {
           if (worker.state === 'installed') {
             toast(navigator.serviceWorker.controller ? 'Update downloaded. Save, then reload.' : 'Offline cache installed.');
-            refresh();
+            refresh(true);
           }
         });
       });
-    }).catch(() => {});
+    }).catch((error) => {
+      diagnostics.lastError = String(error?.message || error);
+    });
   }
 
   function boot() {
     initPanel();
     bindServiceWorkerUpdates();
-    refresh();
-    setInterval(refresh, 15000);
-    window.addEventListener('online', refresh);
-    window.addEventListener('offline', refresh);
+    refresh(true);
+    scheduleRefresh();
+    window.addEventListener('online', () => refresh(true));
+    window.addEventListener('offline', () => refresh(true));
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) saveNow('tab switch');
-      refresh();
+      if (document.hidden) {
+        stopScheduler();
+        saveNow('tab switch');
+        return;
+      }
+      refresh(true);
+      scheduleRefresh();
     });
+    window.addEventListener('pagehide', stopScheduler);
   }
+
+  window.NeonBlockPWA = Object.freeze({
+    refresh: () => refresh(true),
+    saveNow,
+    buildReport,
+    getStatus: () => ({
+      version: 2,
+      schedulerActive: Boolean(refreshTimer),
+      refreshInFlight: Boolean(refreshInFlight),
+      hidden: document.hidden,
+      ...diagnostics
+    })
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

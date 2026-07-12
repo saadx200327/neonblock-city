@@ -7,12 +7,44 @@
   const PANEL_ID = 'neonblock-property-finder-panel';
   const MOBILE_BUTTON_ID = 'btn-mobile-lot-finder';
   const CHUNK_SIZE = 48;
+  const REFRESH_MS = 4000;
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    renders: 0,
+    refreshes: 0,
+    lastError: null
+  };
+  let refreshTimer = null;
   const state = loadState();
   let panel;
   let statusEl;
   let targetEl;
   let reportEl;
+
+  function storageRead(key, fallback = null) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastError = error?.message || String(error);
+      return fallback;
+    }
+  }
+
+  function storageWrite(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastError = error?.message || String(error);
+      return false;
+    }
+  }
 
   function loadState() {
     try {
@@ -22,10 +54,11 @@
         mode: 'nearest',
         lastTarget: null,
         lastReport: null,
-        ...(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'))
+        ...(JSON.parse(storageRead(STORAGE_KEY, '{}') || '{}'))
       };
     } catch (error) {
-      return { scans: 0, assists: 0, mode: 'nearest', lastTarget: null, lastReport: { warning: error.message } };
+      diagnostics.lastError = error?.message || String(error);
+      return { scans: 0, assists: 0, mode: 'nearest', lastTarget: null, lastReport: { warning: diagnostics.lastError } };
     }
   }
 
@@ -99,12 +132,9 @@
 
   function saveState(reason = 'auto') {
     state.lastReport = buildReport(reason);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      localStorage.setItem(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
-    } catch (error) {
-      state.lastReport.storageWarning = error.message;
-    }
+    const savedState = storageWrite(STORAGE_KEY, JSON.stringify(state));
+    const savedReport = storageWrite(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
+    if (!savedState || !savedReport) state.lastReport.storageWarning = diagnostics.lastError || 'Storage unavailable';
     try { window.NeonBlockGame?.saveState?.(); } catch (error) { state.lastReport.saveWarning = error.message; }
     return state.lastReport;
   }
@@ -217,7 +247,7 @@
     injectStyles();
     panel = document.createElement('section');
     panel.id = PANEL_ID;
-    panel.className = localStorage.getItem(OPEN_KEY) === '1' ? '' : 'hidden';
+    panel.className = storageRead(OPEN_KEY, '0') === '1' ? '' : 'hidden';
     panel.innerHTML = `
       <h3>Property Finder <span style="float:right;font-size:12px;color:#ead2ff">F10</span></h3>
       <p id="property-finder-status">Scanning city lots...</p>
@@ -258,16 +288,41 @@
     rail.insertBefore(button, rail.firstChild);
   }
 
+  function shouldSchedule() {
+    return !document.hidden && panel && !panel.classList.contains('hidden');
+  }
+
+  function stopScheduler() {
+    if (refreshTimer !== null) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
+  function scheduleNext() {
+    stopScheduler();
+    if (!shouldSchedule()) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (!shouldSchedule()) return;
+      diagnostics.refreshes += 1;
+      render();
+      scheduleNext();
+    }, REFRESH_MS);
+  }
+
   function togglePanel() {
     buildPanel();
     const hidden = panel.classList.toggle('hidden');
-    localStorage.setItem(OPEN_KEY, hidden ? '0' : '1');
+    storageWrite(OPEN_KEY, hidden ? '0' : '1');
     if (!hidden && !state.lastTarget) state.lastTarget = findLot(state.mode);
     render();
+    scheduleNext();
   }
 
   function render() {
     if (!panel) return;
+    diagnostics.renders += 1;
     const snap = snapshot();
     const p = player(snap);
     const target = state.lastTarget || findLot(state.mode);
@@ -284,12 +339,29 @@
     reportEl.textContent = JSON.stringify(buildReport('render'), null, 2);
   }
 
+  function getStatus() {
+    return {
+      ...diagnostics,
+      visible: !document.hidden,
+      panelOpen: Boolean(panel && !panel.classList.contains('hidden')),
+      schedulerActive: refreshTimer !== null,
+      mode: state.mode,
+      scans: Math.max(0, Number(state.scans || 0)),
+      assists: Math.max(0, Number(state.assists || 0))
+    };
+  }
+
+  function refresh() {
+    if (!panel) buildPanel();
+    diagnostics.refreshes += 1;
+    render();
+    scheduleNext();
+    return getStatus();
+  }
+
   function boot() {
     buildPanel();
     addMobileButton();
-    setInterval(() => {
-      if (!panel?.classList.contains('hidden')) render();
-    }, 4000);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'F10' && !event.repeat) {
         event.preventDefault();
@@ -297,10 +369,25 @@
       }
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) saveState('hidden-page property finder backup');
+      if (document.hidden) {
+        stopScheduler();
+        saveState('hidden-page property finder backup');
+      } else {
+        render();
+        scheduleNext();
+      }
     });
-    window.addEventListener('pagehide', () => saveState('pagehide property finder backup'));
+    window.addEventListener('pagehide', () => {
+      stopScheduler();
+      saveState('pagehide property finder backup');
+    });
+    window.NeonBlockPropertyFinder = Object.freeze({
+      getStatus,
+      refresh,
+      saveNow: () => saveState('manual property finder QA save')
+    });
     render();
+    scheduleNext();
   }
 
   if (document.readyState === 'loading') {

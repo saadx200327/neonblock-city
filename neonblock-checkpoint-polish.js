@@ -4,28 +4,76 @@
   const STORAGE_KEY = 'neonblock:checkpoint-polish:v1';
   const REPORT_KEY = 'neonblock:checkpoint-report';
   const AUTO_MS = 20000;
+  const TICK_MS = 1500;
   const MIN_MOVE = 16;
   const RETURN_COST = 25;
   const $ = (id) => document.getElementById(id);
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    lastStorageError: null,
+    ticks: 0,
+    renders: 0,
+    autoMarks: 0,
+    schedulerStarts: 0,
+    schedulerStops: 0,
+    lastTickAt: null
+  };
+
   const state = loadState();
   let panel;
+  let timer = 0;
   let lastAutoAt = 0;
   let lastHint = '';
 
-  function loadState() {
+  function noteStorageFailure(type, error) {
+    if (type === 'read') diagnostics.storageReadFailures += 1;
+    else diagnostics.storageWriteFailures += 1;
+    diagnostics.lastStorageError = String(error?.message || error || 'Storage unavailable').slice(0, 240);
+  }
+
+  function safeStorageGet(key) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed.checkpoints)) return parsed;
-      }
-    } catch (_) {}
-    return { checkpoints: [], returns: 0, manualMarks: 0, lastReport: null };
+      return localStorage.getItem(key);
+    } catch (error) {
+      noteStorageFailure('read', error);
+      return null;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      noteStorageFailure('write', error);
+      return false;
+    }
+  }
+
+  function loadState() {
+    const fallback = { checkpoints: [], returns: 0, manualMarks: 0, lastReport: null };
+    const raw = safeStorageGet(STORAGE_KEY);
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed?.checkpoints)) return fallback;
+      return {
+        checkpoints: parsed.checkpoints.slice(0, 8),
+        returns: Math.max(0, Number(parsed.returns) || 0),
+        manualMarks: Math.max(0, Number(parsed.manualMarks) || 0),
+        lastReport: parsed.lastReport || null
+      };
+    } catch (error) {
+      noteStorageFailure('read', error);
+      return fallback;
+    }
   }
 
   function persist() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+    return safeStorageSet(STORAGE_KEY, JSON.stringify(state));
   }
 
   function game() {
@@ -47,7 +95,7 @@
     return { x: Number(pos.x) || 0, y: Number(pos.y) || 1, z: Number(pos.z) || 0 };
   }
 
-  function activeMissionTitle(snap = snapshot()) {
+  function activeMissionTitle() {
     const text = document.getElementById('hud-mission')?.textContent?.trim();
     return text || 'Unknown';
   }
@@ -107,13 +155,14 @@
       at: Date.now(),
       source,
       pos: safeGround(pos),
-      mission: activeMissionTitle(snap),
+      mission: activeMissionTitle(),
       vehicle: vehicleName(snap),
       cash: Math.floor(playerFromSnap(snap)?.cash || 0)
     };
     state.checkpoints.unshift(checkpoint);
     state.checkpoints = state.checkpoints.slice(0, 8);
     if (source === 'manual') state.manualMarks += 1;
+    if (source === 'auto') diagnostics.autoMarks += 1;
     lastAutoAt = Date.now();
     persist();
     game()?.saveState?.();
@@ -151,7 +200,7 @@
     if (!latest) return 'Mark a checkpoint before a risky drive or mission run.';
     if (dist(pos, latest.pos) > 160) return 'You are far from the last safe checkpoint. Keep one return ready.';
     if (vehicleName(snap) !== 'On foot') return 'Driving: checkpoint return will also pull your active vehicle nearby.';
-    if (activeMissionTitle(snap) && activeMissionTitle(snap) !== 'None') return 'Checkpoint is ready if the mission route glitches or you fall out of bounds.';
+    if (activeMissionTitle() !== 'None') return 'Checkpoint is ready if the mission route glitches or you fall out of bounds.';
     return 'Checkpoint ready. Use it as a safe rollback before exploring farther.';
   }
 
@@ -185,7 +234,7 @@
     document.body.appendChild(panel);
     $('cp-mark')?.addEventListener('click', () => { if (markCheckpoint('manual')) toast('Checkpoint marked'); });
     $('cp-return')?.addEventListener('click', () => returnToCheckpoint(0));
-    $('cp-save')?.addEventListener('click', () => { game()?.saveState?.(); toast('Checkpoint quick save'); });
+    $('cp-save')?.addEventListener('click', () => { game()?.saveState?.(); persist(); toast('Checkpoint quick save'); });
     $('cp-copy')?.addEventListener('click', copyReport);
   }
 
@@ -204,11 +253,12 @@
     if (!panel) return;
     const shouldHide = typeof force === 'boolean' ? !force : !panel.classList.contains('hidden');
     panel.classList.toggle('hidden', shouldHide);
-    render();
+    if (!shouldHide) render();
   }
 
   function render() {
-    if (!panel) return;
+    if (!panel || panel.classList.contains('hidden')) return;
+    diagnostics.renders += 1;
     const snap = snapshot();
     const pos = playerPos(snap);
     const latest = state.checkpoints[0];
@@ -239,8 +289,9 @@
     const snap = snapshot();
     const report = {
       at: new Date().toISOString(),
+      version: diagnostics.version,
       position: playerPos(snap),
-      mission: activeMissionTitle(snap),
+      mission: activeMissionTitle(),
       vehicle: vehicleName(snap),
       checkpoints: state.checkpoints.length,
       latestCheckpoint: state.checkpoints[0] || null,
@@ -250,10 +301,11 @@
       chunks: snap?.chunks ?? null,
       vehiclesStreamed: snap?.vehicles ?? null,
       cratesStreamed: snap?.crates ?? null,
-      lotsStreamed: snap?.lots ?? null
+      lotsStreamed: snap?.lots ?? null,
+      diagnostics: { ...diagnostics, schedulerActive: Boolean(timer), hidden: document.hidden }
     };
     state.lastReport = report;
-    try { localStorage.setItem(REPORT_KEY, JSON.stringify(report, null, 2)); } catch (_) {}
+    safeStorageSet(REPORT_KEY, JSON.stringify(report, null, 2));
     persist();
     return report;
   }
@@ -269,30 +321,102 @@
     }
   }
 
-  function loop(now) {
+  function stopScheduler() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = 0;
+    diagnostics.schedulerStops += 1;
+  }
+
+  function scheduleNext() {
+    stopScheduler();
+    if (document.hidden) return;
+    diagnostics.schedulerStarts += 1;
+    timer = setTimeout(tick, TICK_MS);
+  }
+
+  function tick() {
+    timer = 0;
+    if (document.hidden) return;
+    const now = Date.now();
+    diagnostics.ticks += 1;
+    diagnostics.lastTickAt = new Date(now).toISOString();
     const pos = playerPos();
     if (shouldMark(pos, now)) markCheckpoint('auto');
-    render();
-    setTimeout(() => requestAnimationFrame(loop), 1500);
+    else render();
+    scheduleNext();
+  }
+
+  function refresh() {
+    if (document.hidden) return false;
+    const now = Date.now();
+    const pos = playerPos();
+    if (shouldMark(pos, now)) markCheckpoint('auto');
+    else render();
+    scheduleNext();
+    return true;
+  }
+
+  function saveNow() {
+    buildReport();
+    if (state.checkpoints.length) game()?.saveState?.();
+    return true;
+  }
+
+  function editableTarget(target) {
+    return target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
   }
 
   addEventListener('keydown', (event) => {
-    if (event.code === 'Digit4' && !event.metaKey && !event.ctrlKey && !event.altKey) togglePanel();
+    if (event.repeat || editableTarget(event.target)) return;
+    if (event.code === 'Digit4' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      togglePanel();
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopScheduler();
+      saveNow();
+    } else {
+      refresh();
+    }
   });
 
   addEventListener('pagehide', () => {
-    buildReport();
-    if (state.checkpoints.length) game()?.saveState?.();
+    stopScheduler();
+    saveNow();
   });
+
+  function getStatus() {
+    return {
+      version: diagnostics.version,
+      checkpoints: state.checkpoints.length,
+      returns: state.returns,
+      manualMarks: state.manualMarks,
+      panelOpen: Boolean(panel && !panel.classList.contains('hidden')),
+      schedulerActive: Boolean(timer),
+      hidden: document.hidden,
+      ...diagnostics
+    };
+  }
 
   function boot() {
     createPanel();
     addMobileButton();
     panel.classList.add('hidden');
     if (!state.checkpoints.length) markCheckpoint('startup');
-    render();
-    requestAnimationFrame(loop);
+    scheduleNext();
   }
+
+  window.NeonBlockCheckpoint = Object.freeze({
+    getStatus,
+    refresh,
+    saveNow,
+    mark: () => markCheckpoint('manual'),
+    returnTo: returnToCheckpoint
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

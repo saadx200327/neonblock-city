@@ -5,6 +5,7 @@
   const REPORT_KEY = 'neonblock:transit-report';
   const BUTTON_ID = 'btn-mobile-transit';
   const PANEL_ID = 'neonblock-transit-panel';
+  const POLL_MS = 750;
 
   const STOPS = [
     { id: 'hub', name: 'Spawn Hub', x: 0, z: 0, cost: 0, hint: 'central safe return' },
@@ -14,31 +15,82 @@
     { id: 'driver', name: 'Driver Dropoff', x: -70, z: 65, cost: 60, hint: 'vehicle delivery zone' }
   ];
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    lastStorageError: null,
+    ticks: 0,
+    renders: 0,
+    discoveries: 0,
+    schedulerStarts: 0,
+    schedulerStops: 0,
+    lastTickAt: null,
+    lastRenderAt: null
+  };
+
   let visible = false;
   let state = loadState();
   let panel;
   let lastReport = loadReport();
   let lastRender = 0;
+  let timer = null;
+
+  function storageError(type, error) {
+    if (type === 'read') diagnostics.storageReadFailures += 1;
+    else diagnostics.storageWriteFailures += 1;
+    diagnostics.lastStorageError = String(error?.message || error || 'unknown storage error');
+  }
+
+  function sanitizeState(value) {
+    const base = { unlocked: { hub: true }, trips: 0, spent: 0, lastStop: 'hub', visited: {} };
+    const next = Object.assign(base, value && typeof value === 'object' ? value : {});
+    next.unlocked = Object.assign({ hub: true }, next.unlocked && typeof next.unlocked === 'object' ? next.unlocked : {});
+    next.visited = next.visited && typeof next.visited === 'object' ? next.visited : {};
+    next.trips = Math.max(0, Math.floor(Number(next.trips) || 0));
+    next.spent = Math.max(0, Math.floor(Number(next.spent) || 0));
+    next.lastStop = STOPS.some((stop) => stop.id === next.lastStop) ? next.lastStop : 'hub';
+    next.unlocked.hub = true;
+    return next;
+  }
 
   function loadState() {
     try {
-      return Object.assign({ unlocked: { hub: true }, trips: 0, spent: 0, lastStop: 'hub', visited: {} }, JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
-    } catch (_) {
-      return { unlocked: { hub: true }, trips: 0, spent: 0, lastStop: 'hub', visited: {} };
+      return sanitizeState(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
+    } catch (error) {
+      storageError('read', error);
+      return sanitizeState({});
     }
   }
 
   function saveState() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      return true;
+    } catch (error) {
+      storageError('write', error);
+      return false;
+    }
   }
 
   function loadReport() {
-    try { return JSON.parse(localStorage.getItem(REPORT_KEY) || 'null'); } catch (_) { return null; }
+    try {
+      return JSON.parse(localStorage.getItem(REPORT_KEY) || 'null');
+    } catch (error) {
+      storageError('read', error);
+      return null;
+    }
   }
 
   function saveReport(report) {
     lastReport = report;
-    try { localStorage.setItem(REPORT_KEY, JSON.stringify(report)); } catch (_) {}
+    try {
+      localStorage.setItem(REPORT_KEY, JSON.stringify(report));
+      return true;
+    } catch (error) {
+      storageError('write', error);
+      return false;
+    }
   }
 
   function game() {
@@ -79,18 +131,27 @@
 
   function discoverStops() {
     const snap = snapshot();
-    if (!snap) return;
+    if (!snap) return false;
     const ownedCount = Object.keys(snap.player?.ownedLots || {}).length;
     const chunks = snap.chunks || 0;
+    let changed = false;
     STOPS.forEach((stop) => {
       const d = distanceTo(stop);
-      if (d < 34 || (stop.id === 'market' && ownedCount > 0) || chunks >= 9) {
+      const shouldUnlock = d < 34 || (stop.id === 'market' && ownedCount > 0) || chunks >= 9;
+      if (shouldUnlock && !state.unlocked[stop.id]) {
         state.unlocked[stop.id] = true;
-        state.visited[stop.id] = (state.visited[stop.id] || 0) + (d < 18 ? 1 : 0);
+        changed = true;
+      }
+      if (d < 18) {
+        const nextVisited = (Number(state.visited[stop.id]) || 0) + 1;
+        if (nextVisited !== state.visited[stop.id]) changed = true;
+        state.visited[stop.id] = nextVisited;
       }
     });
     state.unlocked.hub = true;
-    saveState();
+    diagnostics.discoveries += 1;
+    if (changed) saveState();
+    return changed;
   }
 
   function setPlayerPosition(stop) {
@@ -123,31 +184,11 @@
     state.trips += 1;
     state.spent += stop.cost;
     state.lastStop = stop.id;
-    state.visited[stop.id] = (state.visited[stop.id] || 0) + 1;
+    state.visited[stop.id] = (Number(state.visited[stop.id]) || 0) + 1;
     saveState();
     try { game()?.saveState?.(); } catch (_) {}
     popup(`Transit: ${stop.name}`);
     render(true);
-  }
-
-  function makeReport() {
-    const snap = snapshot();
-    const current = nearestStop();
-    const report = {
-      at: new Date().toISOString(),
-      currentStop: current?.name || 'Unknown',
-      distanceToCurrentStop: current ? Math.round(distanceTo(current)) : null,
-      unlockedStops: STOPS.filter((stop) => state.unlocked[stop.id]).map((stop) => stop.name),
-      trips: state.trips,
-      spent: state.spent,
-      cash: Math.floor(Number(snap?.player?.cash || 0)),
-      activeVehicle: snap?.player?.activeVehicle?.userData?.name || 'none',
-      chunks: snap?.chunks || 0,
-      lastReportSeen: Boolean(lastReport),
-      recommendation: recommendation()
-    };
-    saveReport(report);
-    return report;
   }
 
   function recommendation() {
@@ -160,6 +201,31 @@
     if (activeVehicle) return 'Use transit when stuck, then continue driving from the relocated vehicle.';
     if (cash < 60) return 'Use Spawn Hub for free or earn cash before paid transit.';
     return 'Fast travel to the mission-side stop, quick-save, then continue the objective.';
+  }
+
+  function makeReport() {
+    const snap = snapshot();
+    const current = nearestStop();
+    const report = {
+      at: new Date().toISOString(),
+      version: diagnostics.version,
+      currentStop: current?.name || 'Unknown',
+      distanceToCurrentStop: current ? Math.round(distanceTo(current)) : null,
+      unlockedStops: STOPS.filter((stop) => state.unlocked[stop.id]).map((stop) => stop.name),
+      trips: state.trips,
+      spent: state.spent,
+      cash: Math.floor(Number(snap?.player?.cash || 0)),
+      activeVehicle: snap?.player?.activeVehicle?.userData?.name || 'none',
+      chunks: snap?.chunks || 0,
+      lastReportSeen: Boolean(lastReport),
+      visible,
+      pageVisible: !document.hidden,
+      schedulerActive: Boolean(timer),
+      diagnostics: { ...diagnostics },
+      recommendation: recommendation()
+    };
+    saveReport(report);
+    return report;
   }
 
   function copyReport() {
@@ -175,8 +241,8 @@
       saveState();
       makeReport();
       popup('Transit state saved');
-    } catch (e) {
-      popup(`Transit save failed: ${e.message}`);
+    } catch (error) {
+      popup(`Transit save failed: ${error.message}`);
     }
     render(true);
   }
@@ -206,12 +272,15 @@
   }
 
   function render(force = false) {
+    const el = ensurePanel();
+    if (!visible) {
+      el.style.display = 'none';
+      return;
+    }
     const now = performance.now();
     if (!force && now - lastRender < 350) return;
     lastRender = now;
     discoverStops();
-    const el = ensurePanel();
-    if (!visible) { el.style.display = 'none'; return; }
     const report = makeReport();
     el.style.display = 'block';
     el.innerHTML = `
@@ -228,10 +297,64 @@
       <div style="font-size:12px;color:#bfefff;">Stops: ${report.unlockedStops.length}/${STOPS.length} • Trips: ${report.trips} • Spent: $${report.spent}</div>
       <div style="font-size:12px;color:#8fffd2;margin-top:6px;">${recommendation()}</div>
     `;
+    diagnostics.renders += 1;
+    diagnostics.lastRenderAt = new Date().toISOString();
+  }
+
+  function tick() {
+    timer = null;
+    if (document.hidden) return;
+    diagnostics.ticks += 1;
+    diagnostics.lastTickAt = new Date().toISOString();
+    const changed = discoverStops();
+    if (visible) render(changed);
+    schedule();
+  }
+
+  function schedule() {
+    if (timer || document.hidden) return;
+    timer = setTimeout(tick, POLL_MS);
+    diagnostics.schedulerStarts += 1;
+  }
+
+  function stopScheduler() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+    diagnostics.schedulerStops += 1;
+  }
+
+  function refresh() {
+    discoverStops();
+    render(true);
+    return getStatus();
+  }
+
+  function saveNow() {
+    saveState();
+    return makeReport();
+  }
+
+  function getStatus() {
+    return {
+      version: diagnostics.version,
+      visible,
+      pageVisible: !document.hidden,
+      schedulerActive: Boolean(timer),
+      unlockedStops: STOPS.filter((stop) => state.unlocked[stop.id]).map((stop) => stop.id),
+      trips: state.trips,
+      spent: state.spent,
+      lastStop: state.lastStop,
+      diagnostics: { ...diagnostics }
+    };
   }
 
   function isTransitShortcut(event) {
     return event.code === 'KeyT' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+  }
+
+  function isEditableTarget(target) {
+    return Boolean(target?.closest?.('input,textarea,select,[contenteditable="true"]'));
   }
 
   function wirePanel() {
@@ -247,14 +370,27 @@
     });
 
     document.addEventListener('keydown', (event) => {
-      if (!isTransitShortcut(event)) return;
-      const tag = event.target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (!isTransitShortcut(event) || event.repeat || isEditableTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       visible = !visible;
       render(true);
     }, true);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopScheduler();
+        saveNow();
+        return;
+      }
+      refresh();
+      schedule();
+    });
+
+    window.addEventListener('pagehide', () => {
+      stopScheduler();
+      saveNow();
+    });
   }
 
   function addMobileButton() {
@@ -274,10 +410,19 @@
     ensurePanel();
     wirePanel();
     addMobileButton();
-    setInterval(() => render(false), 500);
-    window.addEventListener('pagehide', () => { saveState(); saveReport(makeReport()); });
-    setTimeout(() => { discoverStops(); render(true); }, 1200);
-    window.NeonBlockTransit = { travel, getReport: makeReport, getState: () => ({ ...state }) };
+    setTimeout(() => {
+      discoverStops();
+      render(true);
+      schedule();
+    }, 1200);
+    window.NeonBlockTransit = {
+      travel,
+      getReport: makeReport,
+      getState: () => ({ ...state }),
+      getStatus,
+      refresh,
+      saveNow
+    };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

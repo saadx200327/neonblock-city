@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v94';
+const CACHE_VERSION = 'v95';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
@@ -141,7 +141,7 @@ async function trimRuntimeCache(cache) {
 }
 
 function isCacheableResponse(response) {
-  if (!response || !response.ok || response.type === 'opaque') return false;
+  if (!response || !response.ok || response.type === 'opaque' || response.status === 206) return false;
   const cacheControl = response.headers.get('Cache-Control') || '';
   return !/\b(?:no-store|private)\b/i.test(cacheControl);
 }
@@ -149,6 +149,7 @@ function isCacheableResponse(response) {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
+  if (request.headers.has('range')) return;
   if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return;
 
   if (request.mode === 'navigate') {

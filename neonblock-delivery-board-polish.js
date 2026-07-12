@@ -6,23 +6,58 @@
   const STYLE_ID = 'neonblock-delivery-board-style';
   const PANEL_ID = 'neonblock-delivery-board-panel';
   const MOBILE_ID = 'btn-mobile-delivery-board';
+  const TICK_MS = 800;
   const CONTRACTS = [
     { id: 'food-hop', title: 'Food Hop', kind: 'drive', goal: 420, cash: 95, xp: 35, hint: 'Enter any car and drive a few blocks without running out of gas.' },
     { id: 'block-runner', title: 'Block Runner', kind: 'walk', goal: 260, cash: 65, xp: 28, hint: 'Move on foot through the city grid and scout nearby interactables.' },
     { id: 'district-loop', title: 'District Loop', kind: 'mixed', goal: 520, cash: 140, xp: 55, hint: 'Mix walking and driving to simulate a full delivery route.' }
   ];
 
-  const state = loadState();
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    movementTicks: 0,
+    renderCount: 0,
+    lastError: '',
+    schedulerActive: false
+  };
+
   let panel;
   let body;
   let status;
   let lastPos = null;
-  let lastVehicle = false;
   let lastReport = '';
+  let timer = 0;
+
+  function readStorage(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastError = String(error?.message || error);
+      return null;
+    }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastError = String(error?.message || error);
+      return false;
+    }
+  }
+
+  function defaultState() {
+    return { activeId: CONTRACTS[0].id, progress: {}, completed: {}, totalWalk: 0, totalDrive: 0, streak: 0, lastClaimAt: 0 };
+  }
 
   function loadState() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      const parsed = JSON.parse(readStorage(STORAGE_KEY) || '{}');
       return {
         activeId: parsed.activeId || CONTRACTS[0].id,
         progress: parsed.progress && typeof parsed.progress === 'object' ? parsed.progress : {},
@@ -33,12 +68,15 @@
         lastClaimAt: Number(parsed.lastClaimAt || 0)
       };
     } catch (error) {
-      return { activeId: CONTRACTS[0].id, progress: {}, completed: {}, totalWalk: 0, totalDrive: 0, streak: 0, lastClaimAt: 0 };
+      diagnostics.lastError = String(error?.message || error);
+      return defaultState();
     }
   }
 
+  const state = loadState();
+
   function saveState() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (error) {}
+    return writeStorage(STORAGE_KEY, JSON.stringify(state));
   }
 
   function snapshot() {
@@ -220,12 +258,12 @@
   async function copyReport() {
     const report = buildReport();
     lastReport = report;
-    try { localStorage.setItem(REPORT_KEY, report); } catch (error) {}
+    const stored = writeStorage(REPORT_KEY, report);
     try {
       await navigator.clipboard.writeText(report);
       toast('Delivery QA copied');
     } catch (error) {
-      toast('Copy blocked; report saved locally');
+      toast(stored ? 'Copy blocked; report saved locally' : 'Copy and local report storage unavailable');
     }
   }
 
@@ -242,6 +280,7 @@
   }
 
   function trackMovement() {
+    diagnostics.movementTicks += 1;
     const snap = snapshot();
     const player = getPlayer(snap);
     const pos = getPosition(player);
@@ -249,7 +288,6 @@
     const driving = Boolean(player?.activeVehicle);
     const delta = distance(lastPos, pos);
     lastPos = pos;
-    lastVehicle = driving;
     if (!delta) return;
     if (driving) state.totalDrive += delta; else state.totalWalk += delta;
     const contract = currentContract();
@@ -261,6 +299,7 @@
 
   function render() {
     ensurePanel();
+    diagnostics.renderCount += 1;
     const snap = snapshot();
     const player = getPlayer(snap);
     const active = currentContract();
@@ -289,6 +328,7 @@
     const active = currentContract();
     const lines = [
       'NeonBlock Delivery Board QA',
+      `version=${diagnostics.version}`,
       `active=${active.title}`,
       `progress=${Math.floor(progressOf(active))}/${active.goal}`,
       `totalWalk=${Math.floor(state.totalWalk)}`,
@@ -303,9 +343,59 @@
       `crates=${snap?.crates ?? 'n/a'}`,
       `lots=${snap?.lots ?? 'n/a'}`,
       `pos=${pos ? `${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)}` : 'n/a'}`,
-      `runtime=${window.NeonBlockGame ? 'ready' : 'missing'}`
+      `runtime=${window.NeonBlockGame ? 'ready' : 'missing'}`,
+      `schedulerActive=${diagnostics.schedulerActive}`,
+      `storageReadFailures=${diagnostics.storageReadFailures}`,
+      `storageWriteFailures=${diagnostics.storageWriteFailures}`
     ];
     return lines.join('\n');
+  }
+
+  function stopScheduler() {
+    if (timer) clearTimeout(timer);
+    timer = 0;
+    diagnostics.schedulerActive = false;
+  }
+
+  function scheduleNext() {
+    stopScheduler();
+    if (document.hidden) return;
+    diagnostics.schedulerActive = true;
+    timer = setTimeout(runTick, TICK_MS);
+  }
+
+  function runTick() {
+    timer = 0;
+    if (document.hidden) {
+      diagnostics.schedulerActive = false;
+      return;
+    }
+    trackMovement();
+    if (panel && !panel.classList.contains('hidden')) render();
+    scheduleNext();
+  }
+
+  function refresh() {
+    lastPos = null;
+    trackMovement();
+    if (panel && !panel.classList.contains('hidden')) render();
+    scheduleNext();
+  }
+
+  function saveNow() {
+    saveState();
+    lastReport = lastReport || buildReport();
+    writeStorage(REPORT_KEY, lastReport);
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      saveNow();
+      lastPos = null;
+      stopScheduler();
+      return;
+    }
+    refresh();
   }
 
   function boot() {
@@ -317,16 +407,30 @@
         togglePanel();
       }
     }, true);
-    setInterval(() => {
-      trackMovement();
-      if (panel && !panel.classList.contains('hidden')) render();
-    }, 800);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     addEventListener('pagehide', () => {
-      saveState();
-      try { localStorage.setItem(REPORT_KEY, lastReport || buildReport()); } catch (error) {}
+      saveNow();
+      stopScheduler();
     });
-    setTimeout(render, 500);
+    setTimeout(() => {
+      render();
+      scheduleNext();
+    }, 500);
   }
+
+  window.NeonBlockDeliveryBoard = Object.freeze({
+    getStatus: () => ({
+      ...diagnostics,
+      hidden: document.hidden,
+      panelOpen: Boolean(panel && !panel.classList.contains('hidden')),
+      activeContract: currentContract().id,
+      progress: progressOf(),
+      totalWalk: state.totalWalk,
+      totalDrive: state.totalDrive
+    }),
+    refresh,
+    saveNow
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

@@ -7,27 +7,63 @@
   const PANEL_ID = 'neonblock-crate-finder-panel';
   const MOBILE_BUTTON_ID = 'btn-mobile-loot-finder';
   const CHUNK_SIZE = 48;
+  const POLL_MS = 4000;
 
-  const state = loadState();
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    renders: 0,
+    polling: false,
+    lastError: null
+  };
+
   let panel;
   let statusEl;
   let targetEl;
   let reportEl;
+  let pollTimer = 0;
 
-  function loadState() {
+  function recordStorageFailure(kind, error) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown storage error');
+    diagnostics.lastError = message;
+    if (kind === 'read') diagnostics.storageReadFailures += 1;
+    if (kind === 'write') diagnostics.storageWriteFailures += 1;
+    return message;
+  }
+
+  function readStorage(key, fallback = null) {
     try {
-      return {
-        scans: 0,
-        assists: 0,
-        skippedIds: [],
-        lastTarget: null,
-        lastReport: null,
-        ...(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'))
-      };
+      const value = localStorage.getItem(key);
+      return value == null ? fallback : value;
     } catch (error) {
-      return { scans: 0, assists: 0, skippedIds: [], lastTarget: null, lastReport: { warning: error.message } };
+      recordStorageFailure('read', error);
+      return fallback;
     }
   }
+
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      recordStorageFailure('write', error);
+      return false;
+    }
+  }
+
+  function loadState() {
+    const base = { scans: 0, assists: 0, skippedIds: [], lastTarget: null, lastReport: null };
+    const raw = readStorage(STORAGE_KEY, '{}');
+    try {
+      return { ...base, ...(JSON.parse(raw || '{}')) };
+    } catch (error) {
+      diagnostics.lastError = error instanceof Error ? error.message : String(error);
+      return { ...base, lastReport: { warning: diagnostics.lastError } };
+    }
+  }
+
+  const state = loadState();
 
   function snapshot() {
     try { return window.NeonBlockGame?.getSnapshot?.() || null; } catch { return null; }
@@ -89,12 +125,9 @@
 
   function saveState(reason = 'auto') {
     state.lastReport = buildReport(reason);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      localStorage.setItem(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
-    } catch (error) {
-      state.lastReport.storageWarning = error.message;
-    }
+    const stateSaved = writeStorage(STORAGE_KEY, JSON.stringify(state));
+    const reportSaved = writeStorage(REPORT_KEY, JSON.stringify(state.lastReport, null, 2));
+    if (!stateSaved || !reportSaved) state.lastReport.storageWarning = diagnostics.lastError;
     try { window.NeonBlockGame?.saveState?.(); } catch (error) { state.lastReport.saveWarning = error.message; }
     return state.lastReport;
   }
@@ -172,6 +205,8 @@
         x: Number(target.x.toFixed(1)),
         z: Number(target.z.toFixed(1))
       } : null,
+      storageReadFailures: diagnostics.storageReadFailures,
+      storageWriteFailures: diagnostics.storageWriteFailures,
       note: 'Predicted targets use the core deterministic chunk seed. Use Next Crate after collecting or if a saved crate is already gone.'
     };
   }
@@ -218,7 +253,7 @@
     injectStyles();
     panel = document.createElement('section');
     panel.id = PANEL_ID;
-    panel.className = localStorage.getItem(OPEN_KEY) === '1' ? '' : 'hidden';
+    panel.className = readStorage(OPEN_KEY, '0') === '1' ? '' : 'hidden';
     panel.innerHTML = `
       <h3>Crate Finder <span style="float:right;font-size:12px;color:#cdfced">F11</span></h3>
       <p id="crate-finder-status">Scanning neon loot...</p>
@@ -264,13 +299,15 @@
   function togglePanel() {
     buildPanel();
     const hidden = panel.classList.toggle('hidden');
-    localStorage.setItem(OPEN_KEY, hidden ? '0' : '1');
+    writeStorage(OPEN_KEY, hidden ? '0' : '1');
     if (!hidden && !state.lastTarget) state.lastTarget = findNearestCrate();
     render();
+    schedulePolling();
   }
 
   function render() {
     if (!panel) return;
+    diagnostics.renders += 1;
     const snap = snapshot();
     const target = state.lastTarget || findNearestCrate();
     const skipped = Array.isArray(state.skippedIds) ? state.skippedIds.length : 0;
@@ -286,23 +323,67 @@
     reportEl.textContent = JSON.stringify(buildReport('render'), null, 2);
   }
 
+  function stopPolling() {
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+    diagnostics.polling = false;
+  }
+
+  function schedulePolling() {
+    stopPolling();
+    if (document.hidden || panel?.classList.contains('hidden')) return;
+    diagnostics.polling = true;
+    pollTimer = window.setTimeout(() => {
+      pollTimer = 0;
+      diagnostics.polling = false;
+      if (!document.hidden && !panel?.classList.contains('hidden')) render();
+      schedulePolling();
+    }, POLL_MS);
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopPolling();
+      saveState('hidden-page crate finder backup');
+      return;
+    }
+    if (!panel?.classList.contains('hidden')) render();
+    schedulePolling();
+  }
+
+  function getStatus() {
+    return {
+      ...diagnostics,
+      hidden: document.hidden,
+      panelOpen: Boolean(panel && !panel.classList.contains('hidden')),
+      scheduled: Boolean(pollTimer),
+      scans: Math.max(0, Number(state.scans || 0)),
+      assists: Math.max(0, Number(state.assists || 0))
+    };
+  }
+
   function boot() {
     buildPanel();
     addMobileButton();
-    setInterval(() => {
-      if (!panel?.classList.contains('hidden')) render();
-    }, 4000);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'F11' && !event.repeat) {
         event.preventDefault();
         togglePanel();
       }
     });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) saveState('hidden-page crate finder backup');
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', () => {
+      stopPolling();
+      saveState('pagehide crate finder backup');
     });
-    window.addEventListener('pagehide', () => saveState('pagehide crate finder backup'));
     render();
+    schedulePolling();
+    window.NeonBlockCrateFinder = Object.freeze({
+      version: 2,
+      refresh() { render(); schedulePolling(); return getStatus(); },
+      saveNow(reason = 'manual crate finder save') { return saveState(reason); },
+      getStatus
+    });
   }
 
   if (document.readyState === 'loading') {

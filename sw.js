@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v97';
+const CACHE_VERSION = 'v98';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
@@ -18,6 +18,7 @@ const CORE_ASSETS = [
   './neonblock-startup-recovery-polish.js',
   './neonblock-editable-input-guard.js',
   './neonblock-pause-input-guard.js',
+  './neonblock-control-release-guard.js',
   './neonblock-mobile-pointer-guard.js',
   './neonblock-hardening.js',
   './neonblock-input-polish.js',
@@ -41,6 +42,7 @@ const CORE_ASSETS = [
   './neonblock-cloud-polish.js',
   './neonblock-onboarding-polish.js',
   './neonblock-garage-polish.js',
+  './neonblock-garage-data-guard.js',
   './neonblock-controls-coach-polish.js',
   './neonblock-city-pulse-polish.js',
   './neonblock-hosting-polish.js',
@@ -69,6 +71,7 @@ const CORE_ASSETS = [
   './neonblock-property-finder-polish.js',
   './neonblock-crate-finder-polish.js',
   './neonblock-mobile-actions-polish.js',
+  './neonblock-mobile-viewport-guard.js',
   './neonblock-save-resilience-polish.js',
   './neonblock-vehicle-restore-polish.js',
   './neonblock-lifecycle-save-polish.js',

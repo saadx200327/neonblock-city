@@ -3,8 +3,21 @@
 
   const STORAGE_KEY = 'neonblock:city-pulse';
   const REPORT_KEY = 'neonblock:city-pulse-report';
+  const POLL_MS = 1000;
   const $ = (id) => document.getElementById(id);
 
+  const diagnostics = {
+    version: 2,
+    storageReadFailures: 0,
+    storageWriteFailures: 0,
+    updateCount: 0,
+    pauseCount: 0,
+    resumeCount: 0,
+    lastStorageError: '',
+    lastUpdatedAt: 0
+  };
+
+  let pollTimer = 0;
   const state = loadState();
   const metrics = {
     startedAt: Date.now(),
@@ -15,16 +28,41 @@
     lastReportAt: 0
   };
 
+  function safeRead(key, fallback = null) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value;
+    } catch (error) {
+      diagnostics.storageReadFailures += 1;
+      diagnostics.lastStorageError = String(error?.message || error || 'Storage read failed');
+      return fallback;
+    }
+  }
+
+  function safeWrite(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      diagnostics.storageWriteFailures += 1;
+      diagnostics.lastStorageError = String(error?.message || error || 'Storage write failed');
+      return false;
+    }
+  }
+
   function loadState() {
     try {
-      return Object.assign({ hidden: false, compact: false, mobileButton: true }, JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
+      return Object.assign(
+        { hidden: false, compact: false, mobileButton: true },
+        JSON.parse(safeRead(STORAGE_KEY, '{}') || '{}')
+      );
     } catch (_) {
       return { hidden: false, compact: false, mobileButton: true };
     }
   }
 
   function savePanelState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    return safeWrite(STORAGE_KEY, JSON.stringify({
       hidden: Boolean(state.hidden),
       compact: Boolean(state.compact),
       mobileButton: Boolean(state.mobileButton)
@@ -187,18 +225,22 @@
     };
   }
 
-  async function copyReport() {
+  function saveReport() {
     const snap = snapshot();
     const guidance = classifyWorld(snap);
-    const report = reportPayload(snap, guidance);
-    const text = JSON.stringify(report, null, 2);
-    localStorage.setItem(REPORT_KEY, text);
-    metrics.lastReportAt = Date.now();
+    const text = JSON.stringify(reportPayload(snap, guidance), null, 2);
+    const saved = safeWrite(REPORT_KEY, text);
+    if (saved) metrics.lastReportAt = Date.now();
+    return { text, saved };
+  }
+
+  async function copyReport() {
+    const { text, saved } = saveReport();
     try {
       await navigator.clipboard?.writeText(text);
       toast('City Pulse report copied');
     } catch (_) {
-      toast('City Pulse report saved locally');
+      toast(saved ? 'City Pulse report saved locally' : 'City Pulse report ready');
     }
   }
 
@@ -213,6 +255,7 @@
   }
 
   function updatePanel() {
+    if (document.hidden) return;
     const panel = buildPanel();
     const snap = snapshot();
     const pos = playerPosition(snap);
@@ -231,6 +274,28 @@
     setText('city-pulse-idle', `${Math.round((Date.now() - metrics.lastMoveAt) / 1000)}s`);
     panel.classList.toggle('hidden', state.hidden);
     panel.classList.toggle('compact', state.compact);
+    diagnostics.updateCount += 1;
+    diagnostics.lastUpdatedAt = Date.now();
+  }
+
+  function stopPolling() {
+    if (!pollTimer) return;
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+    diagnostics.pauseCount += 1;
+  }
+
+  function schedulePolling() {
+    stopPolling();
+    if (document.hidden) return;
+    diagnostics.resumeCount += 1;
+    const tick = () => {
+      pollTimer = 0;
+      if (document.hidden) return;
+      updatePanel();
+      pollTimer = setTimeout(tick, POLL_MS);
+    };
+    pollTimer = setTimeout(tick, POLL_MS);
   }
 
   document.addEventListener('keydown', (event) => {
@@ -240,14 +305,41 @@
     }
   });
 
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopPolling();
+      saveReport();
+      return;
+    }
+    metrics.lastPos = playerPosition(snapshot());
+    updatePanel();
+    schedulePolling();
+  });
+
   window.addEventListener('pagehide', () => {
-    const snap = snapshot();
-    const guidance = classifyWorld(snap);
-    localStorage.setItem(REPORT_KEY, JSON.stringify(reportPayload(snap, guidance), null, 2));
+    stopPolling();
+    saveReport();
+  });
+
+  window.NeonBlockCityPulse = Object.assign(window.NeonBlockCityPulse || {}, {
+    refresh: updatePanel,
+    saveReport,
+    getStatus() {
+      return {
+        ...diagnostics,
+        hidden: Boolean(state.hidden),
+        compact: Boolean(state.compact),
+        polling: Boolean(pollTimer),
+        documentHidden: document.hidden,
+        movedMeters: Math.round(metrics.movedMeters),
+        lastMoveAt: metrics.lastMoveAt,
+        lastReportAt: metrics.lastReportAt
+      };
+    }
   });
 
   buildPanel();
   buildMobileButton();
-  setInterval(updatePanel, 1000);
   updatePanel();
+  schedulePolling();
 })();

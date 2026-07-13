@@ -11,6 +11,9 @@
   let blockedJoystickPointers = 0;
   let fallbackPointerEvents = 0;
   let releaseErrors = 0;
+  let lifecycleReleases = 0;
+  let lastReleaseReason = 'startup';
+  let lastReleaseAt = 0;
 
   function createPointerRelease(type, pointerId) {
     try {
@@ -39,27 +42,49 @@
     }
   }
 
+  function releaseCapture(target, pointerId) {
+    if (!Number.isFinite(pointerId)) return;
+    try {
+      if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+    } catch (_) {
+      // Browsers may already have discarded capture during lifecycle changes.
+    }
+  }
+
   function releaseSprint(pointerId = null) {
-    if (pointerId !== null && sprintPointer !== pointerId) return;
+    if (pointerId !== null && sprintPointer !== pointerId) return false;
     const releasedPointer = sprintPointer ?? pointerId ?? 0;
     sprintPointer = null;
     sprintButton.classList.remove('is-held');
     sprintButton.setAttribute('aria-pressed', 'false');
+    releaseCapture(sprintButton, releasedPointer);
 
     // The core game listens for pointerup on this button. Dispatch a safe
     // synthetic release when the browser ends the gesture outside the button.
     dispatchRelease(sprintButton, 'pointerup', releasedPointer);
+    return true;
   }
 
   function releaseJoystick(pointerId = null) {
-    if (pointerId !== null && joystickPointer !== pointerId) return;
+    if (pointerId !== null && joystickPointer !== pointerId) return false;
     const releasedPointer = joystickPointer ?? pointerId ?? 0;
 
     // Keep the owner set while dispatching so capture-phase ownership checks
     // allow the core game's reset handler to receive this synthetic release.
     dispatchRelease(joystick, 'pointerup', releasedPointer);
+    releaseCapture(joystick, releasedPointer);
     joystickPointer = null;
     if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
+    return true;
+  }
+
+  function releaseAll(reason = 'manual') {
+    const hadHeldInput = sprintPointer !== null || joystickPointer !== null;
+    releaseSprint();
+    releaseJoystick();
+    lastReleaseReason = reason;
+    lastReleaseAt = Date.now();
+    if (hadHeldInput && reason !== 'manual') lifecycleReleases += 1;
   }
 
   sprintButton.setAttribute('aria-pressed', 'false');
@@ -122,16 +147,12 @@
     if (sprintPointer === event.pointerId) releaseSprint(event.pointerId);
     if (joystickPointer === event.pointerId) releaseJoystick(event.pointerId);
   }, true);
-  window.addEventListener('blur', () => {
-    releaseSprint();
-    releaseJoystick();
-  });
+  window.addEventListener('blur', () => releaseAll('blur'));
+  window.addEventListener('pagehide', () => releaseAll('pagehide'));
+  document.addEventListener('freeze', () => releaseAll('freeze'));
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      releaseSprint();
-      releaseJoystick();
-    }
+    if (document.hidden) releaseAll('hidden');
   });
 
   [sprintButton, joystick].forEach((element) => {
@@ -140,18 +161,18 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
-    version: 3,
+    version: 4,
     getStatus: () => ({
       sprintPointer,
       joystickPointer,
       blockedJoystickPointers,
       fallbackPointerEvents,
       releaseErrors,
+      lifecycleReleases,
+      lastReleaseReason,
+      lastReleaseAt,
       installed: true
     }),
-    releaseAll: () => {
-      releaseSprint();
-      releaseJoystick();
-    }
+    releaseAll: () => releaseAll('manual')
   };
 })();

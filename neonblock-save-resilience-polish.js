@@ -3,6 +3,7 @@
 
   const SAVE_PREFIX = 'neonblock:';
   const BACKUP_PREFIX = 'neonblock:backup:';
+  const PREVIOUS_BACKUP_PREFIX = 'neonblock:backup-previous:';
   const QUARANTINE_PREFIX = 'neonblock:quarantine:';
   const VALID_SLOTS = new Set(['slot1', 'slot2']);
   const SAFE_QUALITY = new Set(['auto', 'low', 'medium', 'high']);
@@ -10,11 +11,13 @@
   const MAX_COLLECTION = 5000;
   const BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
   const diagnostics = {
-    version: 3,
+    version: 4,
     storageReadFailures: 0,
     storageWriteFailures: 0,
     quarantinedSaves: 0,
     restoredBackups: 0,
+    restoredPreviousBackups: 0,
+    rotatedBackups: 0,
     blockedImports: 0,
     lastError: ''
   };
@@ -139,23 +142,52 @@
     return stored;
   }
 
+  function rotateBackup(slot) {
+    const current = readStorage(BACKUP_PREFIX + slot);
+    if (!current.ok || !current.value) return current.ok ? { ok: true, rotated: false } : current;
+    const parsed = parseRaw(current.value);
+    if (!parsed.ok) return { ok: true, rotated: false };
+    const stored = writeStorage(PREVIOUS_BACKUP_PREFIX + slot, parsed.raw);
+    if (stored.ok) diagnostics.rotatedBackups++;
+    return stored.ok ? { ok: true, rotated: true } : stored;
+  }
+
   function backup(slot) {
     const result = parseSlot(slot);
     if (!result.ok) return result;
+    const current = readStorage(BACKUP_PREFIX + slot);
+    if (!current.ok) return current;
+    if (current.value === result.raw) return result;
+    const rotated = rotateBackup(slot);
+    if (!rotated.ok) return rotated;
     const stored = writeStorage(BACKUP_PREFIX + slot, result.raw);
     return stored.ok ? result : stored;
   }
 
-  function restoreBackup(slot) {
-    const stored = readStorage(BACKUP_PREFIX + slot);
+  function restoreBackupKey(slot, prefix) {
+    const stored = readStorage(prefix + slot);
     if (!stored.ok) return stored;
     if (!stored.value) return { ok: false, reason: 'No healthy backup is available' };
     const parsed = parseRaw(stored.value);
     if (!parsed.ok) return parsed;
     const restored = writeStorage(SAVE_PREFIX + slot, parsed.raw);
     if (!restored.ok) return restored;
-    diagnostics.restoredBackups++;
     return { ok: true };
+  }
+
+  function restoreBackup(slot) {
+    const latest = restoreBackupKey(slot, BACKUP_PREFIX);
+    if (latest.ok) {
+      diagnostics.restoredBackups++;
+      return latest;
+    }
+    const previous = restoreBackupKey(slot, PREVIOUS_BACKUP_PREFIX);
+    if (previous.ok) {
+      diagnostics.restoredBackups++;
+      diagnostics.restoredPreviousBackups++;
+      return { ok: true, source: 'previous' };
+    }
+    return latest.reason === 'Browser storage is unavailable' ? latest : previous;
   }
 
   document.addEventListener('click', (event) => {
@@ -173,7 +205,7 @@
     const preserved = quarantine(slot, result);
     const restored = restoreBackup(slot);
     if (restored.ok) {
-      notify(`${slot} was damaged; restored the last healthy backup. Tap Load again.`);
+      notify(`${slot} was damaged; restored the ${restored.source === 'previous' ? 'previous' : 'last'} healthy backup. Tap Load again.`);
     } else if (result.reason === 'Browser storage is unavailable') {
       notify('Browser storage is unavailable. Your current game remains open, but this slot cannot load.');
     } else {

@@ -1,13 +1,15 @@
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   const BUTTON_ID = 'btn-mobile-missions';
   let openCount = 0;
+  let closeCount = 0;
   let blockedEditableHotkeys = 0;
   let boardStateUpdates = 0;
   let focusMoves = 0;
   let observer = null;
+  let observedBoard = null;
   let lastError = '';
 
   function isEditable(target) {
@@ -19,12 +21,16 @@
     return document.getElementById('mission-board');
   }
 
+  function isBoardOpen(board = getBoard()) {
+    return Boolean(board && !board.classList.contains('hidden') && !board.hidden && board.getAttribute('aria-hidden') !== 'true');
+  }
+
   function syncButtonState() {
     const button = document.getElementById(BUTTON_ID);
-    const board = getBoard();
+    const opened = isBoardOpen();
     if (!button) return;
-    const opened = Boolean(board && !board.classList.contains('hidden'));
     button.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    button.setAttribute('aria-label', opened ? 'Close mission board' : 'Open mission board');
     button.classList.toggle('active', opened);
     boardStateUpdates += 1;
   }
@@ -44,24 +50,38 @@
     }
   }
 
-  function showMissionBoard() {
+  function setMissionBoard(open) {
     try {
       const board = getBoard();
       const trigger = document.getElementById('btn-missions');
       if (!board || !trigger) return false;
-      const wasHidden = board.classList.contains('hidden');
-      if (wasHidden) trigger.click();
-      const opened = !board.classList.contains('hidden');
+      const wasOpen = isBoardOpen(board);
+      if (wasOpen !== open) trigger.click();
+      const opened = isBoardOpen(board);
       syncButtonState();
-      if (opened && wasHidden) {
+      if (opened && !wasOpen) {
         openCount += 1;
         requestAnimationFrame(() => focusMissionBoard(board));
+      } else if (!opened && wasOpen) {
+        closeCount += 1;
       }
-      return opened;
+      return opened === open;
     } catch (error) {
-      lastError = String(error?.message || error || 'Mission board failed to open');
+      lastError = String(error?.message || error || 'Mission board state change failed');
       return false;
     }
+  }
+
+  function openMissionBoard() {
+    return setMissionBoard(true);
+  }
+
+  function closeMissionBoard() {
+    return setMissionBoard(false);
+  }
+
+  function toggleMissionBoard() {
+    return setMissionBoard(!isBoardOpen());
   }
 
   function ensureButton() {
@@ -80,19 +100,22 @@
     button.setAttribute('aria-expanded', 'false');
     button.addEventListener('click', (event) => {
       event.preventDefault();
-      showMissionBoard();
+      toggleMissionBoard();
     });
     rail.appendChild(button);
     return button;
   }
 
   function watchBoard() {
+    const board = getBoard();
+    if (observer && observedBoard === board) return;
     observer?.disconnect();
     observer = null;
-    const board = getBoard();
+    observedBoard = null;
     if (!board || typeof MutationObserver !== 'function') return;
     observer = new MutationObserver(syncButtonState);
     observer.observe(board, { attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden'] });
+    observedBoard = board;
   }
 
   function refresh() {
@@ -119,12 +142,18 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refresh();
     });
-    window.addEventListener('pagehide', () => observer?.disconnect(), { once: true });
+    window.addEventListener('pagehide', () => {
+      observer?.disconnect();
+      observer = null;
+      observedBoard = null;
+    }, { once: true });
   };
 
   window.NeonBlockMobileMissionControl = {
     version: VERSION,
-    open: showMissionBoard,
+    open: openMissionBoard,
+    close: closeMissionBoard,
+    toggle: toggleMissionBoard,
     refresh,
     getStatus: () => {
       const button = document.getElementById(BUTTON_ID);
@@ -133,9 +162,10 @@
         version: VERSION,
         buttonPresent: Boolean(button),
         buttonVisible: Boolean(button && !button.hidden),
-        missionBoardOpen: Boolean(board && !board.classList.contains('hidden')),
+        missionBoardOpen: isBoardOpen(board),
         observerActive: Boolean(observer),
         openCount,
+        closeCount,
         focusMoves,
         boardStateUpdates,
         blockedEditableHotkeys,

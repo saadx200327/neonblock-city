@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v100';
+const CACHE_VERSION = 'v101';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const CORE_ASSETS = [
@@ -129,8 +129,13 @@ self.addEventListener('message', (event) => {
   }
 });
 
+async function currentCacheMatch(request) {
+  const cache = await caches.open(CACHE_NAME);
+  return cache.match(request);
+}
+
 async function cachedAppShell() {
-  return (await caches.match('./index.html')) || (await caches.match('./'));
+  return (await currentCacheMatch('./index.html')) || (await currentCacheMatch('./'));
 }
 
 async function trimRuntimeCache(cache) {
@@ -182,27 +187,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
+  event.respondWith((async () => {
+    const cached = await currentCacheMatch(request);
+    if (cached) return cached;
 
-      return fetch(request).then((response) => {
-        if (!isCacheableResponse(response)) return response;
+    const response = await fetch(request);
+    if (!isCacheableResponse(response)) return response;
 
-        const requestUrl = new URL(request.url);
-        if (requestUrl.origin === self.location.origin) {
-          const copy = response.clone();
-          event.waitUntil(
-            caches.open(CACHE_NAME)
-              .then(async (cache) => {
-                await cache.put(request, copy);
-                await trimRuntimeCache(cache);
-              })
-              .catch(() => {})
-          );
-        }
-        return response;
-      });
-    })
-  );
+    const requestUrl = new URL(request.url);
+    if (requestUrl.origin === self.location.origin) {
+      const copy = response.clone();
+      event.waitUntil(
+        caches.open(CACHE_NAME)
+          .then(async (cache) => {
+            await cache.put(request, copy);
+            await trimRuntimeCache(cache);
+          })
+          .catch(() => {})
+      );
+    }
+    return response;
+  })());
 });

@@ -6,6 +6,20 @@
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
     'ShiftLeft', 'ShiftRight', 'Space', 'KeyE'
   ];
+  const KEY_BY_CODE = Object.freeze({
+    KeyW: 'w',
+    KeyA: 'a',
+    KeyS: 's',
+    KeyD: 'd',
+    ArrowUp: 'ArrowUp',
+    ArrowDown: 'ArrowDown',
+    ArrowLeft: 'ArrowLeft',
+    ArrowRight: 'ArrowRight',
+    ShiftLeft: 'Shift',
+    ShiftRight: 'Shift',
+    Space: ' ',
+    KeyE: 'e'
+  });
   const MOBILE_TARGET_IDS = [
     'joystick-container',
     'btn-mobile-sprint',
@@ -17,29 +31,51 @@
   let lastReason = 'boot';
   let lastReleasedAt = 0;
   let releasing = false;
+  let keyReleaseFailures = 0;
+  let pointerReleaseFailures = 0;
 
   function dispatchKeyRelease(code) {
+    const init = {
+      code,
+      key: KEY_BY_CODE[code] || code,
+      bubbles: true,
+      cancelable: false,
+      composed: true
+    };
+
     try {
-      window.dispatchEvent(new KeyboardEvent('keyup', {
-        code,
-        key: code,
-        bubbles: true,
-        cancelable: false
-      }));
-    } catch {}
+      document.dispatchEvent(new KeyboardEvent('keyup', init));
+      return true;
+    } catch {
+      try {
+        window.dispatchEvent(new KeyboardEvent('keyup', init));
+        return true;
+      } catch {
+        keyReleaseFailures += 1;
+        return false;
+      }
+    }
   }
 
   function dispatchPointerCancel(target) {
-    if (!target) return;
+    if (!target) return false;
     try {
       target.dispatchEvent(new PointerEvent('pointercancel', {
         pointerId: -1,
         pointerType: 'touch',
         bubbles: true,
-        cancelable: false
+        cancelable: false,
+        composed: true
       }));
+      return true;
     } catch {
-      try { target.dispatchEvent(new Event('pointercancel', { bubbles: true })); } catch {}
+      try {
+        target.dispatchEvent(new Event('pointercancel', { bubbles: true, composed: true }));
+        return true;
+      } catch {
+        pointerReleaseFailures += 1;
+        return false;
+      }
     }
   }
 
@@ -71,10 +107,12 @@
     window.NeonBlockControlReleaseGuard = {
       release: releaseControls,
       getStatus: () => ({
-        version: 1,
+        version: 2,
         releases,
         lastReason,
         lastReleasedAt,
+        keyReleaseFailures,
+        pointerReleaseFailures,
         hidden: document.hidden,
         focused: document.hasFocus()
       })

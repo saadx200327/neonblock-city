@@ -73,15 +73,19 @@
   window.NeonBlockMobileMissionControl = {
     open: showMissionBoard,
     refresh,
-    getStatus: () => ({
-      version: 1,
-      buttonPresent: Boolean(document.getElementById(BUTTON_ID)),
-      buttonVisible: !document.getElementById(BUTTON_ID)?.hidden,
-      missionBoardOpen: !document.getElementById('mission-board')?.classList.contains('hidden'),
-      openCount,
-      blockedEditableHotkeys,
-      lastError
-    })
+    getStatus: () => {
+      const button = document.getElementById(BUTTON_ID);
+      const board = document.getElementById('mission-board');
+      return {
+        version: 1,
+        buttonPresent: Boolean(button),
+        buttonVisible: Boolean(button && !button.hidden),
+        missionBoardOpen: Boolean(board && !board.classList.contains('hidden')),
+        openCount,
+        blockedEditableHotkeys,
+        lastError
+      };
+    }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

@@ -21,6 +21,9 @@
   let observer;
   let syncing = false;
   let open = readOpenState();
+  let lastFocusedElement = null;
+  let focusRestores = 0;
+  let lifecycleCloses = 0;
 
   function readOpenState() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}').open === true; }
@@ -120,9 +123,9 @@
     `;
     document.body.appendChild(drawer);
     grid = drawer.querySelector(`#${GRID_ID}`);
-    drawer.querySelector('.mobile-action-close').addEventListener('click', () => setOpen(false));
+    drawer.querySelector('.mobile-action-close').addEventListener('click', () => setOpen(false, { restoreFocus: true }));
     grid.addEventListener('click', (event) => {
-      if (event.target.closest('button.action-btn')) setOpen(false);
+      if (event.target.closest('button.action-btn')) setOpen(false, { restoreFocus: false });
     });
   }
 
@@ -137,19 +140,40 @@
       rail.appendChild(moreButton);
     }
     if (moreButton.dataset.neonblockMobileActionsBound !== 'true') {
-      moreButton.addEventListener('click', () => setOpen(!open));
+      moreButton.addEventListener('click', () => setOpen(!open, { restoreFocus: false }));
       moreButton.dataset.neonblockMobileActionsBound = 'true';
     }
   }
 
-  function setOpen(next) {
-    open = Boolean(next) && isMobileLayout() && optionalButtons(grid).length > 0;
+  function focusDrawer() {
+    const target = optionalButtons(grid)[0] || drawer?.querySelector('.mobile-action-close');
+    try { target?.focus?.({ preventScroll: true }); }
+    catch { target?.focus?.(); }
+  }
+
+  function restoreTriggerFocus() {
+    const target = lastFocusedElement?.isConnected ? lastFocusedElement : moreButton;
+    lastFocusedElement = null;
+    if (!target || target.hidden || target.disabled) return;
+    try { target.focus({ preventScroll: true }); }
+    catch { target.focus?.(); }
+    focusRestores += 1;
+  }
+
+  function setOpen(next, options = {}) {
+    const wasOpen = open;
+    const shouldOpen = Boolean(next) && isMobileLayout() && optionalButtons(grid).length > 0;
+    if (shouldOpen && !wasOpen) lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : moreButton;
+    open = shouldOpen;
     writeOpenState();
     if (drawer) {
       drawer.hidden = !open;
       drawer.setAttribute('aria-hidden', String(!open));
+      drawer.setAttribute('aria-modal', String(open));
     }
     if (moreButton) moreButton.setAttribute('aria-expanded', String(open));
+    if (open && !wasOpen) queueMicrotask(focusDrawer);
+    else if (!open && wasOpen && options.restoreFocus !== false) queueMicrotask(restoreTriggerFocus);
   }
 
   function updateLabels() {
@@ -163,10 +187,11 @@
     }
     const countEl = drawer?.querySelector('#mobile-action-count');
     if (countEl) countEl.textContent = `${count} shortcut${count === 1 ? '' : 's'} · tap one to close`;
-    if (!count || !isMobileLayout()) setOpen(false);
+    if (!count || !isMobileLayout()) setOpen(false, { restoreFocus: true });
     else if (drawer) {
       drawer.hidden = !open;
       drawer.setAttribute('aria-hidden', String(!open));
+      drawer.setAttribute('aria-modal', String(open));
     }
   }
 
@@ -194,14 +219,28 @@
     observer.observe(rail, { childList: true });
   }
 
+  function closeForLifecycle() {
+    if (!open) return;
+    lifecycleCloses += 1;
+    setOpen(false, { restoreFocus: false });
+  }
+
   function wireEvents() {
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && open) setOpen(false);
+      if (event.key === 'Escape' && open && !event.repeat) {
+        event.preventDefault();
+        setOpen(false, { restoreFocus: true });
+      }
     });
     document.addEventListener('pointerdown', (event) => {
       if (!open || drawer.contains(event.target) || moreButton.contains(event.target)) return;
-      setOpen(false);
+      setOpen(false, { restoreFocus: false });
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) closeForLifecycle();
+      else syncLayout();
+    });
+    addEventListener('pagehide', closeForLifecycle);
     let resizeTimer;
     addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -211,11 +250,14 @@
 
   function getSnapshot() {
     return {
-      version: 2,
+      version: 3,
       mobileLayout: isMobileLayout(),
       open,
       drawerHidden: drawer?.hidden ?? true,
+      activeElement: document.activeElement?.id || document.activeElement?.className || document.activeElement?.tagName || null,
       triggerBound: moreButton?.dataset.neonblockMobileActionsBound === 'true',
+      focusRestores,
+      lifecycleCloses,
       coreActions: Array.from(rail?.querySelectorAll?.('button.action-btn') || []).filter((button) => CORE_IDS.has(button.id)).map((button) => button.id),
       drawerActions: optionalButtons(grid).map((button) => ({ id: button.id, label: button.textContent.trim() }))
     };
@@ -230,7 +272,12 @@
     syncLayout();
     watchRail();
     wireEvents();
-    window.NeonBlockMobileActions = { getSnapshot, close: () => setOpen(false), refresh: syncLayout };
+    window.NeonBlockMobileActions = {
+      getSnapshot,
+      close: () => setOpen(false, { restoreFocus: true }),
+      open: () => setOpen(true, { restoreFocus: false }),
+      refresh: syncLayout
+    };
   }
 
   if (document.readyState === 'loading') {

@@ -17,8 +17,28 @@
   let blockedBrakePointers = 0;
   let refuelCount = 0;
   let forcedBrakeReleases = 0;
+  let loopFrame = null;
+  let visibilityPauses = 0;
+  let visibilityResumes = 0;
+  let skippedHiddenRenders = 0;
+  let storageErrors = 0;
 
   const $ = (id) => document.getElementById(id);
+
+  function isEditable(target) {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
+  }
+
+  function readPanelHidden() {
+    try { return localStorage.getItem(STORE_KEY) === '1'; }
+    catch (_) { storageErrors++; return false; }
+  }
+
+  function persistPanelHidden(hidden) {
+    try { localStorage.setItem(STORE_KEY, hidden ? '1' : '0'); }
+    catch (_) { storageErrors++; }
+  }
 
   function css() {
     const style = document.createElement('style');
@@ -115,7 +135,7 @@
     player.cash -= REFUEL_COST;
     vehicle.userData.gas = Math.min(100, gas + REFUEL_AMOUNT);
     refuelCount++;
-    window.NeonBlockGame?.saveState?.(player.slot || 'slot1');
+    try { window.NeonBlockGame?.saveState?.(player.slot || 'slot1'); } catch (_) {}
     toast(`Refueled +${REFUEL_AMOUNT} gas • -$${REFUEL_COST}`);
     return true;
   }
@@ -182,27 +202,33 @@
     document.body.appendChild(panel);
     $('btn-driving-assist-refuel')?.addEventListener('click', refuelVehicle);
     $('btn-driving-assist-hide')?.addEventListener('click', togglePanel);
-    panel.classList.toggle('hidden', localStorage.getItem(STORE_KEY) === '1');
+    panel.classList.toggle('hidden', readPanelHidden());
   }
 
   function togglePanel() {
     if (!panel) return;
     const hidden = !panel.classList.contains('hidden');
     panel.classList.toggle('hidden', hidden);
-    localStorage.setItem(STORE_KEY, hidden ? '1' : '0');
+    persistPanelHidden(hidden);
+    if (!hidden) updatePanel(true);
   }
 
-  function updatePanel() {
+  function updatePanel(force = false) {
     const player = getPlayer();
     if (!player || !panel) return;
     const inVehicle = Boolean(player.activeVehicle);
+    if (!inVehicle && brakeHeld) releaseBrake({ forced: true });
+    clampUnsafeSpeed(player);
+    if (!force && panel.classList.contains('hidden')) {
+      skippedHiddenRenders++;
+      return;
+    }
     const speed = Math.round(horizontalSpeed(player));
     const gas = Math.round(player.activeVehicle?.userData?.gas ?? 100);
     const state = $('driving-assist-state');
     const speedEl = $('driving-assist-speed');
     const tip = $('driving-assist-tip');
     const refuelButton = $('btn-driving-assist-refuel');
-    if (!inVehicle && brakeHeld) releaseBrake({ forced: true });
     if (state) state.textContent = inVehicle ? `${player.activeVehicle.userData?.name || 'Vehicle'} • gas ${gas}` : 'On foot';
     if (speedEl) speedEl.textContent = String(speed);
     if (refuelButton) refuelButton.disabled = !inVehicle || gas >= 100 || (Number(player.cash) || 0) < REFUEL_COST;
@@ -215,11 +241,30 @@
             ? `Gas is low. Press R or Refuel for $${REFUEL_COST}.`
             : 'Space/X or mobile Brake slows the car without exiting.';
     }
-    clampUnsafeSpeed(player);
+  }
+
+  function stopLoop() {
+    if (loopFrame === null) return;
+    cancelAnimationFrame(loopFrame);
+    loopFrame = null;
+  }
+
+  function scheduleLoop() {
+    if (document.hidden || loopFrame !== null) return;
+    loopFrame = requestAnimationFrame(loop);
+  }
+
+  function loop() {
+    loopFrame = null;
+    if (document.hidden) return;
+    if (brakeHeld) applyBrake(0.86);
+    updatePanel();
+    scheduleLoop();
   }
 
   function wireKeys() {
     addEventListener('keydown', (event) => {
+      if (isEditable(event.target)) return;
       if (event.code === 'KeyK') {
         if (event.repeat) { blockedPanelRepeats++; event.preventDefault(); return; }
         togglePanel();
@@ -253,14 +298,20 @@
     }, true);
     addEventListener('blur', () => releaseBrake({ stabilize: true, forced: true }));
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) releaseBrake({ stabilize: true, forced: true });
+      if (document.hidden) {
+        visibilityPauses++;
+        releaseBrake({ stabilize: true, forced: true });
+        stopLoop();
+      } else {
+        visibilityResumes++;
+        updatePanel(true);
+        scheduleLoop();
+      }
     });
-  }
-
-  function loop() {
-    if (brakeHeld) applyBrake(0.86);
-    updatePanel();
-    requestAnimationFrame(loop);
+    addEventListener('pagehide', () => {
+      releaseBrake({ stabilize: true, forced: true });
+      stopLoop();
+    });
   }
 
   function boot() {
@@ -268,13 +319,15 @@
     installPanel();
     installMobileBrake();
     wireKeys();
-    requestAnimationFrame(loop);
+    updatePanel(true);
+    scheduleLoop();
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 6,
+    version: 7,
     refuelVehicle,
     releaseBrake: () => releaseBrake({ stabilize: true, forced: true }),
+    refresh: () => updatePanel(true),
     getStatus: () => ({
       brakeHeld,
       brakePointerId,
@@ -285,6 +338,11 @@
       blockedBrakePointers,
       forcedBrakeReleases,
       refuelCount,
+      loopRunning: loopFrame !== null,
+      visibilityPauses,
+      visibilityResumes,
+      skippedHiddenRenders,
+      storageErrors,
       refuelCost: REFUEL_COST,
       refuelAmount: REFUEL_AMOUNT,
       speedLimit: SPEED_LIMIT

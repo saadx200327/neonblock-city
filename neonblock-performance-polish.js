@@ -11,6 +11,10 @@
   let lastAppliedAt = 0;
   let lastFps = 0;
   let ignoredHiddenFrames = 0;
+  let visibilityPauses = 0;
+  let visibilityResumes = 0;
+  let rafId = 0;
+  let running = false;
   let panel;
 
   function readState() {
@@ -108,6 +112,7 @@
     const hide = panel.querySelector('[data-perf="hide"]');
     if (body) body.style.display = state.hidden ? 'none' : 'block';
     if (hide) hide.textContent = state.hidden ? 'Show' : 'Hide';
+    if (state.hidden) return;
     const snap = snapshot();
     const quality = snap?.graphics?.quality || state.lastQuality || 'auto';
     const chunks = snap?.chunks ?? '...';
@@ -171,11 +176,23 @@
     }
   }
 
+  function scheduleLoop() {
+    if (running || document.hidden) return;
+    running = true;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stopLoop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    running = false;
+  }
+
   function loop(now) {
+    rafId = 0;
     if (document.hidden) {
       ignoredHiddenFrames += 1;
-      last = now;
-      requestAnimationFrame(loop);
+      running = false;
       return;
     }
     const dt = Math.min(0.25, (now - last) / 1000 || 0);
@@ -193,16 +210,25 @@
       maybeTune(1);
       render();
     }
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
 
   document.addEventListener('visibilitychange', () => {
-    resetSampling();
+    if (document.hidden) {
+      visibilityPauses += 1;
+      stopLoop();
+    } else {
+      visibilityResumes += 1;
+      resetSampling();
+      scheduleLoop();
+    }
     render();
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyJ' || event.repeat) return;
+    const target = event.target;
+    const editable = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+    if (event.code !== 'KeyJ' || event.repeat || editable) return;
     state.hidden = !state.hidden;
     saveState();
     render();
@@ -211,22 +237,32 @@
 
   window.NeonBlockPerformancePolish = {
     getStatus: () => ({
-      version: 2,
+      version: 3,
       adaptive: state.adaptive,
       lastFps,
       bestFps: state.bestFps,
       lowFpsSeconds,
       highFpsSeconds,
       ignoredHiddenFrames,
+      visibilityPauses,
+      visibilityResumes,
+      loopRunning: running,
+      animationFrameScheduled: Boolean(rafId),
       documentHidden: document.hidden,
       gameReady: Boolean(snapshot())
     }),
-    resetSampling
+    resetSampling,
+    refresh: () => {
+      resetSampling();
+      render();
+      scheduleLoop();
+    }
   };
 
+  window.addEventListener('pagehide', stopLoop);
   window.addEventListener('load', () => {
     createPanel();
     resetSampling();
-    requestAnimationFrame(loop);
+    scheduleLoop();
   });
 })();

@@ -2,13 +2,17 @@
   'use strict';
 
   const STORAGE_PREFIX = 'neonblock:';
+  const WATCH_INTERVAL_MS = 250;
   const state = {
-    version: 2,
+    version: 3,
     wrapped: false,
     attempts: 0,
     restored: 0,
     skipped: 0,
     superseded: 0,
+    watcherChecks: 0,
+    watcherPauses: 0,
+    watcherResumes: 0,
     lastSlot: null,
     lastVehicleId: null,
     lastReason: 'not-run'
@@ -16,7 +20,7 @@
 
   let restoredMesh = null;
   let restoredPlayer = null;
-  let cleanupFrame = 0;
+  let cleanupTimer = 0;
   let restoreGeneration = 0;
 
   function parseSave(slot, supplied) {
@@ -42,9 +46,13 @@
     );
   }
 
+  function clearWatcher() {
+    if (cleanupTimer) clearTimeout(cleanupTimer);
+    cleanupTimer = 0;
+  }
+
   function removeRestoredMesh({ clearActive = true } = {}) {
-    cancelAnimationFrame(cleanupFrame);
-    cleanupFrame = 0;
+    clearWatcher();
     if (!restoredMesh) return;
 
     if (clearActive && restoredPlayer?.activeVehicle === restoredMesh) {
@@ -58,18 +66,32 @@
     restoredPlayer = null;
   }
 
+  function scheduleWatcher(delay = WATCH_INTERVAL_MS) {
+    clearWatcher();
+    if (!restoredMesh || !restoredPlayer || document.visibilityState === 'hidden') return;
+    cleanupTimer = setTimeout(checkForExit, delay);
+  }
+
+  function checkForExit() {
+    cleanupTimer = 0;
+    const mesh = restoredMesh;
+    const player = restoredPlayer;
+    if (!mesh || !player) return;
+
+    state.watcherChecks += 1;
+    if (player.activeVehicle !== mesh || !mesh.parent) {
+      removeRestoredMesh({ clearActive: false });
+      state.lastReason = 'restored-vehicle-exited-cleanly';
+      return;
+    }
+
+    scheduleWatcher();
+  }
+
   function watchForExit(player, mesh) {
-    cancelAnimationFrame(cleanupFrame);
-    const check = () => {
-      if (restoredMesh !== mesh) return;
-      if (player.activeVehicle !== mesh) {
-        removeRestoredMesh({ clearActive: false });
-        state.lastReason = 'restored-vehicle-exited-cleanly';
-        return;
-      }
-      cleanupFrame = requestAnimationFrame(check);
-    };
-    cleanupFrame = requestAnimationFrame(check);
+    clearWatcher();
+    if (restoredMesh !== mesh || restoredPlayer !== player) return;
+    scheduleWatcher(0);
   }
 
   function restoreVehicle(slot, supplied) {
@@ -169,6 +191,20 @@
     return true;
   }
 
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      if (cleanupTimer) state.watcherPauses += 1;
+      clearWatcher();
+      return;
+    }
+    if (restoredMesh && restoredPlayer) {
+      state.watcherResumes += 1;
+      scheduleWatcher(0);
+    }
+  });
+
+  window.addEventListener('pagehide', clearWatcher);
+
   if (!install()) {
     addEventListener('load', () => install(), { once: true });
   }
@@ -177,12 +213,19 @@
     getStatus: () => ({
       ...state,
       active: Boolean(restoredMesh?.parent),
+      watcherScheduled: Boolean(cleanupTimer),
+      watcherIntervalMs: WATCH_INTERVAL_MS,
       generation: restoreGeneration
     }),
     retry: (slot = window.NeonBlockGame?.getSnapshot?.().player?.slot || 'slot1') => {
       ++restoreGeneration;
       removeRestoredMesh();
       return restoreVehicle(slot, null);
+    },
+    refresh: () => {
+      if (!restoredMesh || !restoredPlayer) return false;
+      checkForExit();
+      return Boolean(restoredMesh);
     },
     cleanup: () => {
       ++restoreGeneration;

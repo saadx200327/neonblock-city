@@ -22,6 +22,12 @@
   let scans = 0;
   let stableWrites = 0;
   let skippedStableWrites = 0;
+  let frozen = false;
+  let pageHidden = false;
+  let lifecyclePaused = document.hidden;
+  let lifecyclePauses = 0;
+  let lifecycleResumes = 0;
+  let lastLifecycleReason = document.hidden ? 'initially hidden' : 'boot';
 
   const $ = (id) => document.getElementById(id);
 
@@ -241,11 +247,16 @@
     bootTimer = 0;
   }
 
+  function isLifecycleSuspended() {
+    return document.hidden || frozen || pageHidden;
+  }
+
   function scheduleScan(delay = SCAN_INTERVAL_MS) {
     clearTimeout(scanTimer);
-    if (document.hidden || !game()?.getSnapshot) return;
+    if (isLifecycleSuspended() || !game()?.getSnapshot) return;
     scanTimer = setTimeout(() => {
       scanTimer = 0;
+      if (isLifecycleSuspended()) return;
       scan();
       if (!hidden) updatePanel();
       scheduleScan();
@@ -254,7 +265,7 @@
 
   function boot() {
     clearTimeout(bootTimer);
-    if (document.hidden) return;
+    if (isLifecycleSuspended()) return;
     if (!game()?.getSnapshot) {
       bootTimer = setTimeout(boot, BOOT_INTERVAL_MS);
       return;
@@ -265,20 +276,53 @@
     scheduleScan();
   }
 
-  function saveBeforeBackground() {
-    persistStableSpot(true);
+  function pauseLifecycle(reason = 'background') {
+    if (!lifecyclePaused) {
+      lifecyclePaused = true;
+      lifecyclePauses += 1;
+      persistStableSpot(true);
+    }
+    lastLifecycleReason = reason;
     stopScheduler();
+  }
+
+  function resumeLifecycle(reason = 'foreground') {
+    if (isLifecycleSuspended()) return;
+    if (lifecyclePaused) {
+      lifecyclePaused = false;
+      lifecycleResumes += 1;
+    }
+    lastLifecycleReason = reason;
+    boot();
   }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      saveBeforeBackground();
+      pauseLifecycle('visibility hidden');
       return;
     }
-    boot();
+    resumeLifecycle('visibility visible');
   });
 
-  window.addEventListener('pagehide', saveBeforeBackground);
+  document.addEventListener('freeze', () => {
+    frozen = true;
+    pauseLifecycle('document freeze');
+  });
+
+  document.addEventListener('resume', () => {
+    frozen = false;
+    resumeLifecycle('document resume');
+  });
+
+  window.addEventListener('pagehide', () => {
+    pageHidden = true;
+    pauseLifecycle('pagehide');
+  });
+
+  window.addEventListener('pageshow', () => {
+    pageHidden = false;
+    resumeLifecycle('pageshow');
+  });
 
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyZ' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -302,7 +346,7 @@
       updatePanel();
     },
     getStatus: () => ({
-      version: 3,
+      version: 4,
       maxSafeCoordinate: MAX_SAFE_COORDINATE,
       lastFixAt,
       lastReport,
@@ -312,7 +356,13 @@
       skippedStableWrites,
       lastStablePersistAt,
       active: Boolean(scanTimer || bootTimer),
-      pausedForVisibility: document.hidden
+      pausedForVisibility: document.hidden,
+      frozen,
+      pageHidden,
+      lifecyclePaused,
+      lifecyclePauses,
+      lifecycleResumes,
+      lastLifecycleReason
     })
   };
 

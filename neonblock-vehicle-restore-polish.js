@@ -4,12 +4,14 @@
   const STORAGE_PREFIX = 'neonblock:';
   const WATCH_INTERVAL_MS = 250;
   const state = {
-    version: 3,
+    version: 4,
     wrapped: false,
     attempts: 0,
     restored: 0,
     skipped: 0,
     superseded: 0,
+    asyncLoads: 0,
+    loadFailures: 0,
     watcherChecks: 0,
     watcherPauses: 0,
     watcherResumes: 0,
@@ -172,6 +174,31 @@
     });
   }
 
+  function scheduleAfterLoad(slot, supplied, result) {
+    if (!result || typeof result.then !== 'function') {
+      scheduleRestore(slot, supplied);
+      return;
+    }
+
+    const generation = ++restoreGeneration;
+    state.asyncLoads += 1;
+    Promise.resolve(result).then(
+      () => {
+        if (generation !== restoreGeneration) {
+          state.superseded += 1;
+          state.lastReason = 'superseded-by-newer-load';
+          return;
+        }
+        scheduleRestore(slot, supplied);
+      },
+      (error) => {
+        if (generation !== restoreGeneration) return;
+        state.loadFailures += 1;
+        state.lastReason = `load-failed: ${error?.message || String(error)}`;
+      }
+    );
+  }
+
   function install() {
     const game = window.NeonBlockGame;
     if (!game?.loadState || state.wrapped) return false;
@@ -180,8 +207,17 @@
     game.loadState = function loadStateWithVehicleRecovery(slot = 'slot1', data = null) {
       ++restoreGeneration;
       removeRestoredMesh();
-      const result = originalLoadState(slot, data);
-      scheduleRestore(slot, data);
+
+      let result;
+      try {
+        result = originalLoadState(slot, data);
+      } catch (error) {
+        state.loadFailures += 1;
+        state.lastReason = `load-threw: ${error?.message || String(error)}`;
+        throw error;
+      }
+
+      scheduleAfterLoad(slot, data, result);
       return result;
     };
 

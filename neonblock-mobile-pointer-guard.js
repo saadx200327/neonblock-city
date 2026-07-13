@@ -12,6 +12,7 @@
   let fallbackPointerEvents = 0;
   let releaseErrors = 0;
   let lifecycleReleases = 0;
+  let skippedInactiveReleases = 0;
   let lastReleaseReason = 'startup';
   let lastReleaseAt = 0;
 
@@ -52,8 +53,13 @@
   }
 
   function releaseSprint(pointerId = null) {
+    if (sprintPointer === null) {
+      skippedInactiveReleases += 1;
+      return false;
+    }
     if (pointerId !== null && sprintPointer !== pointerId) return false;
-    const releasedPointer = sprintPointer ?? pointerId ?? 0;
+
+    const releasedPointer = sprintPointer;
     sprintPointer = null;
     sprintButton.classList.remove('is-held');
     sprintButton.setAttribute('aria-pressed', 'false');
@@ -66,8 +72,13 @@
   }
 
   function releaseJoystick(pointerId = null) {
+    if (joystickPointer === null) {
+      skippedInactiveReleases += 1;
+      return false;
+    }
     if (pointerId !== null && joystickPointer !== pointerId) return false;
-    const releasedPointer = joystickPointer ?? pointerId ?? 0;
+
+    const releasedPointer = joystickPointer;
 
     // Keep the owner set while dispatching so capture-phase ownership checks
     // allow the core game's reset handler to receive this synthetic release.
@@ -79,12 +90,13 @@
   }
 
   function releaseAll(reason = 'manual') {
-    const hadHeldInput = sprintPointer !== null || joystickPointer !== null;
-    releaseSprint();
-    releaseJoystick();
+    const releasedSprint = releaseSprint();
+    const releasedJoystick = releaseJoystick();
+    const hadHeldInput = releasedSprint || releasedJoystick;
     lastReleaseReason = reason;
     lastReleaseAt = Date.now();
     if (hadHeldInput && reason !== 'manual') lifecycleReleases += 1;
+    return hadHeldInput;
   }
 
   sprintButton.setAttribute('aria-pressed', 'false');
@@ -161,7 +173,7 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
-    version: 4,
+    version: 5,
     getStatus: () => ({
       sprintPointer,
       joystickPointer,
@@ -169,6 +181,7 @@
       fallbackPointerEvents,
       releaseErrors,
       lifecycleReleases,
+      skippedInactiveReleases,
       lastReleaseReason,
       lastReleaseAt,
       installed: true

@@ -13,6 +13,11 @@
   let ignoredHiddenFrames = 0;
   let visibilityPauses = 0;
   let visibilityResumes = 0;
+  let lifecyclePauses = 0;
+  let lifecycleResumes = 0;
+  let frozen = false;
+  let pageHidden = false;
+  let lastLifecycleReason = 'startup';
   let rafId = 0;
   let running = false;
   let panel;
@@ -35,6 +40,10 @@
 
   function snapshot() {
     try { return game()?.getSnapshot?.() || null; } catch (_) { return null; }
+  }
+
+  function isSuspended() {
+    return document.hidden || frozen || pageHidden;
   }
 
   function applyQuality(quality, reason) {
@@ -128,7 +137,7 @@
   }
 
   function adviceText(snap, quality) {
-    if (document.hidden) return 'Performance sampling is paused while the game is in the background.';
+    if (isSuspended()) return 'Performance sampling is paused while the game is in the background.';
     if (!snap) return 'Waiting for the game world before adaptive tuning starts...';
     if (!lastFps) return 'Measuring live frame pacing...';
     if (lastFps < 24) return 'Low FPS detected. Guard will drop graphics if this continues.';
@@ -147,7 +156,7 @@
   }
 
   function maybeTune(dt) {
-    if (!state.adaptive || document.hidden) return;
+    if (!state.adaptive || isSuspended()) return;
     const snap = snapshot();
     if (!snap) {
       lowFpsSeconds = 0;
@@ -177,7 +186,7 @@
   }
 
   function scheduleLoop() {
-    if (running || document.hidden) return;
+    if (running || isSuspended()) return;
     running = true;
     rafId = requestAnimationFrame(loop);
   }
@@ -188,9 +197,25 @@
     running = false;
   }
 
+  function pauseLifecycle(reason) {
+    lastLifecycleReason = reason;
+    lifecyclePauses += 1;
+    stopLoop();
+    render();
+  }
+
+  function resumeLifecycle(reason) {
+    lastLifecycleReason = reason;
+    if (isSuspended()) return;
+    lifecycleResumes += 1;
+    resetSampling();
+    scheduleLoop();
+    render();
+  }
+
   function loop(now) {
     rafId = 0;
-    if (document.hidden) {
+    if (isSuspended()) {
       ignoredHiddenFrames += 1;
       running = false;
       return;
@@ -216,13 +241,31 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       visibilityPauses += 1;
-      stopLoop();
+      pauseLifecycle('visibility-hidden');
     } else {
       visibilityResumes += 1;
-      resetSampling();
-      scheduleLoop();
+      resumeLifecycle('visibility-visible');
     }
-    render();
+  });
+
+  document.addEventListener('freeze', () => {
+    frozen = true;
+    pauseLifecycle('freeze');
+  });
+
+  document.addEventListener('resume', () => {
+    frozen = false;
+    resumeLifecycle('resume');
+  });
+
+  window.addEventListener('pagehide', () => {
+    pageHidden = true;
+    pauseLifecycle('pagehide');
+  });
+
+  window.addEventListener('pageshow', () => {
+    pageHidden = false;
+    resumeLifecycle('pageshow');
   });
 
   document.addEventListener('keydown', (event) => {
@@ -237,7 +280,7 @@
 
   window.NeonBlockPerformancePolish = {
     getStatus: () => ({
-      version: 3,
+      version: 4,
       adaptive: state.adaptive,
       lastFps,
       bestFps: state.bestFps,
@@ -246,6 +289,12 @@
       ignoredHiddenFrames,
       visibilityPauses,
       visibilityResumes,
+      lifecyclePauses,
+      lifecycleResumes,
+      frozen,
+      pageHidden,
+      suspended: isSuspended(),
+      lastLifecycleReason,
       loopRunning: running,
       animationFrameScheduled: Boolean(rafId),
       documentHidden: document.hidden,
@@ -259,7 +308,6 @@
     }
   };
 
-  window.addEventListener('pagehide', stopLoop);
   window.addEventListener('load', () => {
     createPanel();
     resetSampling();

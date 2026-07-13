@@ -19,6 +19,8 @@
   let lastEnabledAt = 0;
   let lastSaveAt = 0;
   let lastLoadAt = 0;
+  let queuedSaveCount = 0;
+  const slotSaveQueues = new Map();
 
   const bridge = {
     enabled: false,
@@ -27,12 +29,14 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 2,
+        version: 3,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
         retryCount,
         retryPending: Boolean(retryTimer),
+        pendingSaveSlots: Array.from(slotSaveQueues.keys()),
+        queuedSaveCount,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -78,6 +82,26 @@
     }
   }
 
+  function queueSlotSave(slot, task) {
+    const previous = slotSaveQueues.get(slot) || Promise.resolve();
+    const queued = previous.catch(() => false).then(task);
+    slotSaveQueues.set(slot, queued);
+    queuedSaveCount += 1;
+    return queued.finally(() => {
+      if (slotSaveQueues.get(slot) === queued) slotSaveQueues.delete(slot);
+    });
+  }
+
+  async function waitForSlotSave(slot) {
+    const pending = slotSaveQueues.get(slot);
+    if (!pending) return;
+    try {
+      await pending;
+    } catch (_) {
+      // The save path records its own error; loading should still fall back safely.
+    }
+  }
+
   function configureBridge(user, db) {
     bridge.enabled = true;
     lastError = null;
@@ -85,24 +109,26 @@
 
     bridge.save = async (slot, data) => {
       try {
-        const activeUser = getCurrentUser();
-        const activeDb = getFirestore();
-        if (!activeUser || !activeDb || activeUser.uid !== user.uid) {
-          disableBridge();
-          scheduleRetry();
-          return false;
-        }
-
         const safeSlot = normalizeSlot(slot);
         const safeData = normalizePayload(data);
-        await activeDb.collection(COLLECTION)
-          .doc(activeUser.uid)
-          .collection('slots')
-          .doc(safeSlot)
-          .set({ ...safeData, updatedAt: Date.now() }, { merge: true });
-        lastSaveAt = Date.now();
-        lastError = null;
-        return true;
+        return await queueSlotSave(safeSlot, async () => {
+          const activeUser = getCurrentUser();
+          const activeDb = getFirestore();
+          if (!activeUser || !activeDb || activeUser.uid !== user.uid) {
+            disableBridge();
+            scheduleRetry();
+            return false;
+          }
+
+          await activeDb.collection(COLLECTION)
+            .doc(activeUser.uid)
+            .collection('slots')
+            .doc(safeSlot)
+            .set({ ...safeData, updatedAt: Date.now() }, { merge: true });
+          lastSaveAt = Date.now();
+          lastError = null;
+          return true;
+        });
       } catch (error) {
         lastError = error;
         console.warn('[NeonBlock City] Cloud save failed; local save remains available:', error);
@@ -112,6 +138,9 @@
 
     bridge.load = async (slot) => {
       try {
+        const safeSlot = normalizeSlot(slot);
+        await waitForSlotSave(safeSlot);
+
         const activeUser = getCurrentUser();
         const activeDb = getFirestore();
         if (!activeUser || !activeDb || activeUser.uid !== user.uid) {
@@ -120,7 +149,6 @@
           return null;
         }
 
-        const safeSlot = normalizeSlot(slot);
         const snapshot = await activeDb.collection(COLLECTION)
           .doc(activeUser.uid)
           .collection('slots')

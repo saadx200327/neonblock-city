@@ -20,14 +20,24 @@
   let loopFrame = null;
   let visibilityPauses = 0;
   let visibilityResumes = 0;
+  let lifecyclePauses = 0;
+  let lifecycleResumes = 0;
   let skippedHiddenRenders = 0;
   let storageErrors = 0;
+  let frozen = false;
+  let pageHidden = false;
+  let leaving = false;
+  let lastLifecycleReason = 'boot';
 
   const $ = (id) => document.getElementById(id);
 
   function isEditable(target) {
     if (!(target instanceof Element)) return false;
     return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
+  }
+
+  function isSuspended() {
+    return document.hidden || frozen || pageHidden || leaving;
   }
 
   function readPanelHidden() {
@@ -116,9 +126,17 @@
     brakeButton?.setAttribute('aria-pressed', brakePointerId !== null ? 'true' : 'false');
   }
 
+  function releasePointerCapture() {
+    if (brakePointerId === null || !brakeButton?.hasPointerCapture?.(brakePointerId)) return;
+    try { brakeButton.releasePointerCapture(brakePointerId); } catch (_) {}
+  }
+
   function releaseBrake({ stabilize = false, forced = false, pointer = true, keyboard = true } = {}) {
     const wasHeld = brakeHeld;
-    if (pointer) brakePointerId = null;
+    if (pointer) {
+      releasePointerCapture();
+      brakePointerId = null;
+    }
     if (keyboard) keyboardBrakeCodes.clear();
     syncBrakeHeld();
     if (forced && wasHeld && !brakeHeld) forcedBrakeReleases++;
@@ -135,7 +153,10 @@
     player.cash -= REFUEL_COST;
     vehicle.userData.gas = Math.min(100, gas + REFUEL_AMOUNT);
     refuelCount++;
-    try { window.NeonBlockGame?.saveState?.(player.slot || 'slot1'); } catch (_) {}
+    try {
+      const saveResult = window.NeonBlockGame?.saveState?.(player.slot || 'slot1');
+      if (saveResult?.catch) saveResult.catch(() => {});
+    } catch (_) {}
     toast(`Refueled +${REFUEL_AMOUNT} gas • -$${REFUEL_COST}`);
     return true;
   }
@@ -167,7 +188,7 @@
 
     brakeButton.addEventListener('pointerdown', (event) => {
       event.preventDefault();
-      if (!getPlayer()?.activeVehicle) return;
+      if (isSuspended() || !getPlayer()?.activeVehicle) return;
       if (brakePointerId !== null && brakePointerId !== event.pointerId) {
         blockedBrakePointers++;
         return;
@@ -250,21 +271,36 @@
   }
 
   function scheduleLoop() {
-    if (document.hidden || loopFrame !== null) return;
+    if (isSuspended() || loopFrame !== null) return;
     loopFrame = requestAnimationFrame(loop);
   }
 
   function loop() {
     loopFrame = null;
-    if (document.hidden) return;
+    if (isSuspended()) return;
     if (brakeHeld) applyBrake(0.86);
     updatePanel();
     scheduleLoop();
   }
 
+  function pauseLifecycle(reason) {
+    lastLifecycleReason = reason;
+    lifecyclePauses++;
+    releaseBrake({ stabilize: true, forced: true });
+    stopLoop();
+  }
+
+  function resumeLifecycle(reason) {
+    lastLifecycleReason = reason;
+    if (isSuspended()) return;
+    lifecycleResumes++;
+    updatePanel(true);
+    scheduleLoop();
+  }
+
   function wireKeys() {
     addEventListener('keydown', (event) => {
-      if (isEditable(event.target)) return;
+      if (isSuspended() || isEditable(event.target)) return;
       if (event.code === 'KeyK') {
         if (event.repeat) { blockedPanelRepeats++; event.preventDefault(); return; }
         togglePanel();
@@ -296,21 +332,33 @@
         releaseBrake({ forced: true, pointer: true, keyboard: false });
       }
     }, true);
-    addEventListener('blur', () => releaseBrake({ stabilize: true, forced: true }));
+    addEventListener('blur', () => pauseLifecycle('blur'));
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         visibilityPauses++;
-        releaseBrake({ stabilize: true, forced: true });
-        stopLoop();
+        pauseLifecycle('visibility-hidden');
       } else {
         visibilityResumes++;
-        updatePanel(true);
-        scheduleLoop();
+        resumeLifecycle('visibility-visible');
       }
     });
     addEventListener('pagehide', () => {
-      releaseBrake({ stabilize: true, forced: true });
-      stopLoop();
+      pageHidden = true;
+      leaving = true;
+      pauseLifecycle('pagehide');
+    });
+    addEventListener('pageshow', () => {
+      pageHidden = false;
+      leaving = false;
+      resumeLifecycle('pageshow');
+    });
+    document.addEventListener('freeze', () => {
+      frozen = true;
+      pauseLifecycle('freeze');
+    });
+    document.addEventListener('resume', () => {
+      frozen = false;
+      resumeLifecycle('resume');
     });
   }
 
@@ -324,7 +372,7 @@
   }
 
   window.NeonBlockDrivingPolish = {
-    version: 7,
+    version: 8,
     refuelVehicle,
     releaseBrake: () => releaseBrake({ stabilize: true, forced: true }),
     refresh: () => updatePanel(true),
@@ -341,6 +389,13 @@
       loopRunning: loopFrame !== null,
       visibilityPauses,
       visibilityResumes,
+      lifecyclePauses,
+      lifecycleResumes,
+      frozen,
+      pageHidden,
+      leaving,
+      suspended: isSuspended(),
+      lastLifecycleReason,
       skippedHiddenRenders,
       storageErrors,
       refuelCost: REFUEL_COST,

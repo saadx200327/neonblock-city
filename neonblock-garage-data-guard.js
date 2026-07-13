@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const STORAGE_PREFIX = 'neonblock:garage:v2:';
   const BACKUP_PREFIX = 'neonblock:garage:recovery:';
   const MAX_OWNED = 64;
@@ -13,7 +13,10 @@
   let repairs = 0;
   let readFailures = 0;
   let writeFailures = 0;
+  let backupWrites = 0;
+  let backupFailures = 0;
   let lastRepairAt = 0;
+  let lastBackupAt = 0;
   let lastError = null;
 
   function game() {
@@ -132,6 +135,17 @@
     }
   }
 
+  function writeRecoveryBackup(slot, raw) {
+    const backupKey = `${BACKUP_PREFIX}${sanitizeSlot(slot)}:${Date.now()}`;
+    if (!safeWrite(backupKey, raw.slice(0, 200000))) {
+      backupFailures += 1;
+      return false;
+    }
+    backupWrites += 1;
+    lastBackupAt = Date.now();
+    return true;
+  }
+
   function repairSlot(slot = resolveSlot()) {
     currentSlot = sanitizeSlot(slot);
     const key = storageKey(currentSlot);
@@ -143,8 +157,9 @@
       parsed = JSON.parse(raw);
     } catch (error) {
       lastError = String(error?.message || error);
-      const backupKey = `${BACKUP_PREFIX}${currentSlot}:${Date.now()}`;
-      safeWrite(backupKey, raw.slice(0, 200000));
+      if (!writeRecoveryBackup(currentSlot, raw)) {
+        return { changed: false, slot: currentSlot, reason: 'backup-write-failed' };
+      }
       const clean = { owned: {}, serviceClaims: {}, hidden: false };
       if (safeWrite(key, stableStringify(clean))) {
         repairs += 1;
@@ -191,7 +206,10 @@
       repairs,
       readFailures,
       writeFailures,
+      backupWrites,
+      backupFailures,
       lastRepairAt: lastRepairAt || null,
+      lastBackupAt: lastBackupAt || null,
       lastError
     };
   }

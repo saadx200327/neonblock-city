@@ -26,6 +26,7 @@
     'btn-mobile-jump',
     'btn-mobile-interact'
   ];
+  const RELEASE_COALESCE_MS = 80;
 
   let releases = 0;
   let lastReason = 'boot';
@@ -33,6 +34,8 @@
   let releasing = false;
   let keyReleaseFailures = 0;
   let pointerReleaseFailures = 0;
+  let coalescedReleases = 0;
+  let lastCoalescedReason = null;
 
   function dispatchKeyRelease(code) {
     const init = {
@@ -79,15 +82,24 @@
     }
   }
 
-  function releaseControls(reason = 'manual') {
+  function releaseControls(reason = 'manual', options = {}) {
     if (releasing) return false;
+
+    const normalizedReason = String(reason || 'manual');
+    const now = Date.now();
+    if (options.force !== true && lastReleasedAt && now - lastReleasedAt < RELEASE_COALESCE_MS) {
+      coalescedReleases += 1;
+      lastCoalescedReason = normalizedReason;
+      return false;
+    }
+
     releasing = true;
     try {
       RELEASE_CODES.forEach(dispatchKeyRelease);
       MOBILE_TARGET_IDS.forEach((id) => dispatchPointerCancel(document.getElementById(id)));
       releases += 1;
-      lastReason = String(reason || 'manual');
-      lastReleasedAt = Date.now();
+      lastReason = normalizedReason;
+      lastReleasedAt = now;
       return true;
     } finally {
       releasing = false;
@@ -105,14 +117,17 @@
     document.addEventListener('freeze', () => releaseControls('document-freeze'));
 
     window.NeonBlockControlReleaseGuard = {
-      release: releaseControls,
+      release: (reason) => releaseControls(reason, { force: true }),
       getStatus: () => ({
-        version: 2,
+        version: 3,
         releases,
         lastReason,
         lastReleasedAt,
         keyReleaseFailures,
         pointerReleaseFailures,
+        coalescedReleases,
+        lastCoalescedReason,
+        releaseCoalesceMs: RELEASE_COALESCE_MS,
         hidden: document.hidden,
         focused: document.hasFocus()
       })

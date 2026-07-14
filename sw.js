@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v106';
+const CACHE_VERSION = 'v107';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
@@ -8,6 +8,8 @@ let lastOptionalPrecacheFailures = 0;
 let lastOptionalPrecacheRecoveries = 0;
 let offlineAssetFallbacks = 0;
 let lastOfflineAssetUrl = null;
+let navigationFallbacks = 0;
+let lastNavigationFallbackStatus = null;
 const CORE_ASSETS = [
   './','./index.html','./styles.css','./app.js','./vendor/three-0.158.0.min.js','./firebase-backend.js',
   './neonblock-runtime-guard.js','./neonblock-action-edge-guard.js','./neonblock-input-lifecycle-guard.js',
@@ -101,7 +103,9 @@ self.addEventListener('message', (event) => {
       lastOptionalPrecacheFailures,
       lastOptionalPrecacheRecoveries,
       offlineAssetFallbacks,
-      lastOfflineAssetUrl
+      lastOfflineAssetUrl,
+      navigationFallbacks,
+      lastNavigationFallbackStatus
     });
   }
 });
@@ -158,11 +162,27 @@ self.addEventListener('fetch', (event) => {
           event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy)).catch(() => {}));
           return response;
         }
+        const shell = await cachedAppShell();
+        if (response && response.status < 500) return response;
+        if (shell) {
+          navigationFallbacks += 1;
+          lastNavigationFallbackStatus = response?.status || 0;
+          return shell;
+        }
         if (response) return response;
-        return await cachedAppShell();
+        return new Response('NeonBlock City is unavailable and its app shell is not cached yet.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
       } catch (_) {
-        return (await cachedAppShell()) || new Response('NeonBlock City is offline and its app shell is not cached yet.', {
-          status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+        const shell = await cachedAppShell();
+        if (shell) {
+          navigationFallbacks += 1;
+          lastNavigationFallbackStatus = 0;
+          return shell;
+        }
+        return new Response('NeonBlock City is offline and its app shell is not cached yet.', {
+          status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
         });
       }
     })());

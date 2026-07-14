@@ -29,6 +29,8 @@
     resumes: 0,
     actionPresses: 0,
     disconnectReleases: 0,
+    ignoredDisconnects: 0,
+    controllerHandoffs: 0,
     lastLifecycleReason: 'startup'
   };
 
@@ -202,10 +204,25 @@
       schedulePoll();
     });
     window.addEventListener('gamepaddisconnected', (event) => {
-      if (state.connectedPadIndex === event.gamepad.index) state.connectedPadIndex = null;
+      const disconnectedActivePad = state.connectedPadIndex === event.gamepad.index;
+      if (!disconnectedActivePad) {
+        state.ignoredDisconnects += 1;
+        return;
+      }
+
       releaseAll('controller-disconnected');
-      popup('Controller disconnected');
-      scheduleIdleProbe();
+      const replacementPad = navigator.getGamepads
+        ? Array.from(navigator.getGamepads()).filter(Boolean).find((pad) => pad.index !== event.gamepad.index)
+        : null;
+      state.connectedPadIndex = replacementPad?.index ?? null;
+      if (replacementPad) {
+        state.controllerHandoffs += 1;
+        popup('Controller switched');
+        schedulePoll();
+      } else {
+        popup('Controller disconnected');
+        scheduleIdleProbe();
+      }
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -307,7 +324,7 @@
       protectCanvasContext();
       respectReducedMotion();
       window.NeonBlockInputPolish = {
-        version: 3,
+        version: 4,
         releaseAll: () => releaseAll('manual'),
         getStatus: () => ({ ...state, heldKeys: [...keyState].filter(([, held]) => held).map(([code]) => code) })
       };

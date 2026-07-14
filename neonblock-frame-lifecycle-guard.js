@@ -6,6 +6,7 @@
   const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
   const nativeCancelAnimationFrame = window.cancelAnimationFrame.bind(window);
   const pending = new Map();
+  const MAX_CALLBACKS_PER_FRAME = 120;
   let nextId = 1;
   let nativeHandle = null;
   let frozen = false;
@@ -15,6 +16,9 @@
   let flushes = 0;
   let lifecyclePauses = 0;
   let lifecycleResumes = 0;
+  let deferredCallbacks = 0;
+  let peakQueuedCallbacks = 0;
+  let lastFrameBatchSize = 0;
   let lastLifecycleReason = document.hidden ? 'initial-hidden' : 'visible';
 
   function isSuspended() {
@@ -46,12 +50,24 @@
     scheduleNativeFrame();
   }
 
+  function takeFrameBatch() {
+    const batch = [];
+    for (const entry of pending) {
+      batch.push(entry);
+      pending.delete(entry[0]);
+      if (batch.length >= MAX_CALLBACKS_PER_FRAME) break;
+    }
+    return batch;
+  }
+
   function runFrame(now) {
     nativeHandle = null;
     if (isSuspended()) return;
 
-    const batch = Array.from(pending.entries());
-    pending.clear();
+    const batch = takeFrameBatch();
+    lastFrameBatchSize = batch.length;
+    if (pending.size) deferredCallbacks += pending.size;
+
     for (const [, callback] of batch) {
       try {
         callback(now);
@@ -72,6 +88,7 @@
     if (typeof callback !== 'function') throw new TypeError('requestAnimationFrame callback must be a function');
     const id = nextId++;
     pending.set(id, callback);
+    peakQueuedCallbacks = Math.max(peakQueuedCallbacks, pending.size);
     scheduleNativeFrame();
     return id;
   };
@@ -112,7 +129,7 @@
   window.NeonBlockFrameLifecycleGuard = {
     getStatus() {
       return {
-        version: 2,
+        version: 3,
         hidden: document.hidden,
         frozen,
         pageHidden,
@@ -124,6 +141,10 @@
         resumeFlushes: flushes,
         lifecyclePauses,
         lifecycleResumes,
+        maxCallbacksPerFrame: MAX_CALLBACKS_PER_FRAME,
+        deferredCallbacks,
+        peakQueuedCallbacks,
+        lastFrameBatchSize,
         lastLifecycleReason
       };
     },

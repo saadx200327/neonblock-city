@@ -5,6 +5,7 @@
   const keyState = new Map();
   const buttonState = new Map();
   const axisDeadzone = 0.28;
+  const idleProbeDelay = 1000;
   const keyByCode = {
     KeyW: 'w',
     KeyA: 'a',
@@ -18,9 +19,12 @@
   };
   const state = {
     frameId: 0,
+    idleTimerId: 0,
     suspended: document.hidden,
     connectedPadIndex: null,
     polls: 0,
+    idleProbes: 0,
+    activeFrames: 0,
     pauses: 0,
     resumes: 0,
     actionPresses: 0,
@@ -115,9 +119,25 @@
     if (pressed && !wasPressed) tap(code, label);
   }
 
+  function clearIdleProbe() {
+    if (!state.idleTimerId) return;
+    clearTimeout(state.idleTimerId);
+    state.idleTimerId = 0;
+  }
+
   function schedulePoll() {
     if (state.frameId || state.suspended) return;
+    clearIdleProbe();
     state.frameId = requestAnimationFrame(pollGamepad);
+  }
+
+  function scheduleIdleProbe() {
+    if (state.idleTimerId || state.frameId || state.suspended) return;
+    state.idleTimerId = setTimeout(() => {
+      state.idleTimerId = 0;
+      state.idleProbes += 1;
+      pollGamepad();
+    }, idleProbeDelay);
   }
 
   function pollGamepad() {
@@ -133,10 +153,11 @@
     if (!pad) {
       releaseAll('no-controller');
       state.connectedPadIndex = null;
-      schedulePoll();
+      scheduleIdleProbe();
       return;
     }
 
+    state.activeFrames += 1;
     state.connectedPadIndex = pad.index;
     axisToKey(pad.axes[1] || 0, 'KeyW', 'KeyS');
     axisToKey(pad.axes[0] || 0, 'KeyA', 'KeyD');
@@ -159,6 +180,7 @@
     state.lastLifecycleReason = reason;
     if (state.frameId) cancelAnimationFrame(state.frameId);
     state.frameId = 0;
+    clearIdleProbe();
     releaseAll(reason);
   }
 
@@ -167,12 +189,14 @@
     state.suspended = false;
     state.resumes += 1;
     state.lastLifecycleReason = reason;
-    schedulePoll();
+    if (state.connectedPadIndex === null) scheduleIdleProbe();
+    else schedulePoll();
   }
 
   function addGamepadStatus() {
     window.addEventListener('gamepadconnected', (event) => {
       state.connectedPadIndex = event.gamepad.index;
+      clearIdleProbe();
       popup(`Controller connected: ${event.gamepad.id.slice(0, 28)}`);
       setHudError('none');
       schedulePoll();
@@ -181,6 +205,7 @@
       if (state.connectedPadIndex === event.gamepad.index) state.connectedPadIndex = null;
       releaseAll('controller-disconnected');
       popup('Controller disconnected');
+      scheduleIdleProbe();
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -192,7 +217,7 @@
     document.addEventListener('freeze', () => pausePolling('freeze'));
     document.addEventListener('resume', () => resumePolling('resume'));
 
-    schedulePoll();
+    scheduleIdleProbe();
   }
 
   function wireMissionClose() {
@@ -282,7 +307,7 @@
       protectCanvasContext();
       respectReducedMotion();
       window.NeonBlockInputPolish = {
-        version: 2,
+        version: 3,
         releaseAll: () => releaseAll('manual'),
         getStatus: () => ({ ...state, heldKeys: [...keyState].filter(([, held]) => held).map(([code]) => code) })
       };

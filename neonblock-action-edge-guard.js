@@ -6,8 +6,26 @@
   let blockedRepeats = 0;
   let forcedReleases = 0;
   let releaseErrors = 0;
+  let documentReleases = 0;
+  let windowFallbackReleases = 0;
+  let lifecycleReleases = 0;
 
-  function dispatchRelease(code, key, forced = false) {
+  function createReleaseEvent(code, pending) {
+    return new KeyboardEvent('keyup', {
+      code,
+      key: pending.key,
+      location: pending.location,
+      ctrlKey: pending.ctrlKey,
+      shiftKey: pending.shiftKey,
+      altKey: pending.altKey,
+      metaKey: pending.metaKey,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+  }
+
+  function dispatchRelease(code, forced = false) {
     const pending = pendingRelease.get(code);
     if (!pending) return false;
 
@@ -16,17 +34,20 @@
     if (pending.timerId) clearTimeout(pending.timerId);
 
     try {
-      window.dispatchEvent(new KeyboardEvent('keyup', {
-        code,
-        key,
-        bubbles: true,
-        cancelable: true
-      }));
+      document.dispatchEvent(createReleaseEvent(code, pending));
+      documentReleases += 1;
       if (forced) forcedReleases += 1;
       return true;
     } catch (_) {
-      releaseErrors += 1;
-      return false;
+      try {
+        window.dispatchEvent(createReleaseEvent(code, pending));
+        windowFallbackReleases += 1;
+        if (forced) forcedReleases += 1;
+        return true;
+      } catch (_) {
+        releaseErrors += 1;
+        return false;
+      }
     }
   }
 
@@ -35,25 +56,33 @@
 
     const pending = {
       key: event.key,
+      location: event.location,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
       frameId: 0,
       timerId: 0
     };
     pendingRelease.set(event.code, pending);
 
     pending.frameId = requestAnimationFrame(() => {
-      dispatchRelease(event.code, event.key);
+      dispatchRelease(event.code);
     });
 
     // requestAnimationFrame may pause when a tab or installed PWA is backgrounded.
     pending.timerId = window.setTimeout(() => {
-      dispatchRelease(event.code, event.key, true);
+      dispatchRelease(event.code, true);
     }, 120);
   }
 
   function releaseAllPending() {
-    Array.from(pendingRelease.entries()).forEach(([code, pending]) => {
-      dispatchRelease(code, pending.key, true);
+    let released = 0;
+    Array.from(pendingRelease.keys()).forEach((code) => {
+      if (dispatchRelease(code, true)) released += 1;
     });
+    if (released) lifecycleReleases += released;
+    return released;
   }
 
   window.addEventListener('keydown', (event) => {
@@ -74,19 +103,23 @@
     if (document.hidden) releaseAllPending();
   });
   window.addEventListener('pagehide', releaseAllPending);
+  document.addEventListener('freeze', releaseAllPending);
 
   window.NeonBlockActionEdgeGuard = {
-    version: 3,
+    version: 4,
     guardedActions: Array.from(EDGE_ACTIONS),
     getPendingActions: () => Array.from(pendingRelease.keys()),
     releaseAll: releaseAllPending,
     getStatus: () => ({
-      version: 3,
+      version: 4,
       guardedActions: Array.from(EDGE_ACTIONS),
       pendingActions: Array.from(pendingRelease.keys()),
       blockedRepeats,
       forcedReleases,
-      releaseErrors
+      releaseErrors,
+      documentReleases,
+      windowFallbackReleases,
+      lifecycleReleases
     })
   };
 })();

@@ -1,11 +1,13 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v105';
+const CACHE_VERSION = 'v106';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
 const OPTIONAL_PRECACHE_RETRIES = 1;
 let lastOptionalPrecacheFailures = 0;
 let lastOptionalPrecacheRecoveries = 0;
+let offlineAssetFallbacks = 0;
+let lastOfflineAssetUrl = null;
 const CORE_ASSETS = [
   './','./index.html','./styles.css','./app.js','./vendor/three-0.158.0.min.js','./firebase-backend.js',
   './neonblock-runtime-guard.js','./neonblock-action-edge-guard.js','./neonblock-input-lifecycle-guard.js',
@@ -97,7 +99,9 @@ self.addEventListener('message', (event) => {
       optionalPrecacheConcurrency: OPTIONAL_PRECACHE_CONCURRENCY,
       optionalPrecacheRetries: OPTIONAL_PRECACHE_RETRIES,
       lastOptionalPrecacheFailures,
-      lastOptionalPrecacheRecoveries
+      lastOptionalPrecacheRecoveries,
+      offlineAssetFallbacks,
+      lastOfflineAssetUrl
     });
   }
 });
@@ -120,6 +124,25 @@ function isCacheableResponse(response) {
   if (!response || !response.ok || response.type === 'opaque' || response.status === 206) return false;
   const cacheControl = response.headers.get('Cache-Control') || '';
   return !/\b(?:no-store|private)\b/i.test(cacheControl);
+}
+function offlineAssetResponse(request) {
+  const contentTypes = {
+    script: 'application/javascript; charset=utf-8',
+    style: 'text/css; charset=utf-8',
+    image: 'image/svg+xml',
+    manifest: 'application/manifest+json; charset=utf-8'
+  };
+  offlineAssetFallbacks += 1;
+  lastOfflineAssetUrl = request.url;
+  return new Response('', {
+    status: 503,
+    statusText: 'Offline asset unavailable',
+    headers: {
+      'Content-Type': contentTypes[request.destination] || 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-NeonBlock-Offline': '1'
+    }
+  });
 }
 
 self.addEventListener('fetch', (event) => {
@@ -148,15 +171,22 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const cached = await currentCacheMatch(request);
     if (cached) return cached;
-    const response = await fetch(request);
-    if (!isCacheableResponse(response)) return response;
-    if (new URL(request.url).origin === self.location.origin) {
-      const copy = response.clone();
-      event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
-        await cache.put(request, copy);
-        await trimRuntimeCache(cache);
-      }).catch(() => {}));
+    try {
+      const response = await fetch(request);
+      if (!isCacheableResponse(response)) return response;
+      if (new URL(request.url).origin === self.location.origin) {
+        const copy = response.clone();
+        event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
+          await cache.put(request, copy);
+          await trimRuntimeCache(cache);
+        }).catch(() => {}));
+      }
+      return response;
+    } catch (_) {
+      const lateCached = await currentCacheMatch(request);
+      if (lateCached) return lateCached;
+      if (new URL(request.url).origin === self.location.origin) return offlineAssetResponse(request);
+      throw _;
     }
-    return response;
   })());
 });

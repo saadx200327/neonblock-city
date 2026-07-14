@@ -3,12 +3,25 @@
 
   const state = {
     scheduled: false,
+    frameId: 0,
     dispatching: false,
+    suspended: document.hidden,
+    frozen: false,
+    pageHidden: false,
     refreshes: 0,
+    cancelledFrames: 0,
+    skippedWhileSuspended: 0,
+    lifecyclePauses: 0,
+    lifecycleResumes: 0,
     lastWidth: 0,
     lastHeight: 0,
-    lastReason: 'init'
+    lastReason: 'init',
+    pendingReason: ''
   };
+
+  function isSuspended() {
+    return document.hidden || state.frozen || state.pageHidden;
+  }
 
   function viewportSize() {
     const viewport = window.visualViewport;
@@ -17,8 +30,26 @@
     return { width, height };
   }
 
+  function cancelScheduled(reason = 'cancelled') {
+    if (!state.scheduled) return false;
+    if (state.frameId) cancelAnimationFrame(state.frameId);
+    state.frameId = 0;
+    state.scheduled = false;
+    state.cancelledFrames += 1;
+    state.pendingReason = reason;
+    return true;
+  }
+
   function applyViewport(reason = 'unknown') {
     state.scheduled = false;
+    state.frameId = 0;
+
+    if (isSuspended()) {
+      state.skippedWhileSuspended += 1;
+      state.pendingReason = reason;
+      return false;
+    }
+
     const { width, height } = viewportSize();
     document.documentElement.style.setProperty('--neonblock-vh', `${height * 0.01}px`);
 
@@ -26,6 +57,7 @@
     state.lastWidth = width;
     state.lastHeight = height;
     state.lastReason = reason;
+    state.pendingReason = '';
     state.refreshes += 1;
 
     const canvas = document.getElementById('game-canvas');
@@ -39,12 +71,38 @@
       window.dispatchEvent(new Event('resize'));
       queueMicrotask(() => { state.dispatching = false; });
     }
+
+    return true;
   }
 
-  function schedule(reason) {
-    if (state.dispatching || state.scheduled) return;
+  function schedule(reason = 'unknown') {
+    state.pendingReason = reason;
+
+    if (state.dispatching || state.scheduled) return false;
+    if (isSuspended()) {
+      state.skippedWhileSuspended += 1;
+      return false;
+    }
+
     state.scheduled = true;
-    requestAnimationFrame(() => applyViewport(reason));
+    state.frameId = requestAnimationFrame(() => applyViewport(state.pendingReason || reason));
+    return true;
+  }
+
+  function pause(reason) {
+    const wasSuspended = state.suspended;
+    state.suspended = true;
+    cancelScheduled(reason);
+    state.lastReason = reason;
+    if (!wasSuspended) state.lifecyclePauses += 1;
+  }
+
+  function resume(reason) {
+    if (isSuspended()) return false;
+    const wasSuspended = state.suspended;
+    state.suspended = false;
+    if (wasSuspended) state.lifecycleResumes += 1;
+    return schedule(reason);
   }
 
   window.visualViewport?.addEventListener('resize', () => schedule('visualViewport.resize'), { passive: true });
@@ -53,9 +111,30 @@
     schedule('orientationchange');
     setTimeout(() => schedule('orientationchange-settled'), 250);
   }, { passive: true });
-  window.addEventListener('pageshow', () => schedule('pageshow'), { passive: true });
+
+  window.addEventListener('pagehide', () => {
+    state.pageHidden = true;
+    pause('pagehide');
+  }, { passive: true });
+
+  window.addEventListener('pageshow', () => {
+    state.pageHidden = false;
+    resume('pageshow');
+  }, { passive: true });
+
+  document.addEventListener('freeze', () => {
+    state.frozen = true;
+    pause('freeze');
+  });
+
+  document.addEventListener('resume', () => {
+    state.frozen = false;
+    resume('resume');
+  });
+
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) schedule('visibilitychange');
+    if (document.hidden) pause('visibilitychange-hidden');
+    else resume('visibilitychange-visible');
   });
 
   if ('ResizeObserver' in window) {
@@ -64,9 +143,17 @@
   }
 
   window.NeonBlockViewportRecovery = {
+    version: 2,
     refresh: () => applyViewport('manual'),
-    getStatus: () => ({ ...state })
+    schedule,
+    getStatus: () => ({
+      ...state,
+      suspended: isSuspended()
+    })
   };
 
-  schedule('startup');
+  if (!isSuspended()) {
+    state.suspended = false;
+    schedule('startup');
+  }
 })();

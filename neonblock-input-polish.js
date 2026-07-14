@@ -3,9 +3,30 @@
 
   const $ = (id) => document.getElementById(id);
   const keyState = new Map();
+  const buttonState = new Map();
   const axisDeadzone = 0.28;
-  const repeatMs = 180;
-  const lastTap = new Map();
+  const keyByCode = {
+    KeyW: 'w',
+    KeyA: 'a',
+    KeyS: 's',
+    KeyD: 'd',
+    KeyE: 'e',
+    KeyU: 'u',
+    KeyP: 'p',
+    ShiftLeft: 'Shift',
+    Space: ' '
+  };
+  const state = {
+    frameId: 0,
+    suspended: document.hidden,
+    connectedPadIndex: null,
+    polls: 0,
+    pauses: 0,
+    resumes: 0,
+    actionPresses: 0,
+    disconnectReleases: 0,
+    lastLifecycleReason: 'startup'
+  };
 
   function setHudError(message) {
     const target = $('debug-last-error');
@@ -21,24 +42,55 @@
     popup.timer = setTimeout(() => target.classList.add('hidden'), duration);
   }
 
+  function keyboardEvent(type, code) {
+    return new KeyboardEvent(type, {
+      code,
+      key: keyByCode[code] || code,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+  }
+
+  function dispatchKey(type, code) {
+    try {
+      document.dispatchEvent(keyboardEvent(type, code));
+      return true;
+    } catch {
+      window.dispatchEvent(keyboardEvent(type, code));
+      return false;
+    }
+  }
+
   function press(code) {
-    if (keyState.get(code)) return;
+    if (keyState.get(code)) return false;
     keyState.set(code, true);
-    window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+    dispatchKey('keydown', code);
+    return true;
   }
 
   function release(code) {
-    if (!keyState.get(code)) return;
+    if (!keyState.get(code)) return false;
     keyState.set(code, false);
-    window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true, cancelable: true }));
+    dispatchKey('keyup', code);
+    return true;
+  }
+
+  function releaseAll(reason = 'release-all') {
+    let released = 0;
+    for (const code of keyState.keys()) {
+      if (release(code)) released += 1;
+    }
+    buttonState.clear();
+    state.disconnectReleases += released;
+    state.lastLifecycleReason = reason;
+    return released;
   }
 
   function tap(code, label) {
-    const now = performance.now();
-    if (now - (lastTap.get(code) || 0) < repeatMs) return;
-    lastTap.set(code, now);
     press(code);
-    setTimeout(() => release(code), 60);
+    queueMicrotask(() => release(code));
+    state.actionPresses += 1;
     if (label) popup(label, 900);
   }
 
@@ -55,38 +107,92 @@
     }
   }
 
+  function buttonPressedOnce(pad, index, code, label) {
+    const pressed = Boolean(pad.buttons[index]?.pressed);
+    const key = `${pad.index}:${index}`;
+    const wasPressed = buttonState.get(key) === true;
+    buttonState.set(key, pressed);
+    if (pressed && !wasPressed) tap(code, label);
+  }
+
+  function schedulePoll() {
+    if (state.frameId || state.suspended) return;
+    state.frameId = requestAnimationFrame(pollGamepad);
+  }
+
   function pollGamepad() {
+    state.frameId = 0;
+    if (state.suspended) return;
+
+    state.polls += 1;
     const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
-    const pad = pads[0];
+    const pad = state.connectedPadIndex === null
+      ? pads[0]
+      : pads.find((candidate) => candidate.index === state.connectedPadIndex) || pads[0];
+
     if (!pad) {
-      ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft'].forEach(release);
-      requestAnimationFrame(pollGamepad);
+      releaseAll('no-controller');
+      state.connectedPadIndex = null;
+      schedulePoll();
       return;
     }
 
+    state.connectedPadIndex = pad.index;
     axisToKey(pad.axes[1] || 0, 'KeyW', 'KeyS');
     axisToKey(pad.axes[0] || 0, 'KeyA', 'KeyD');
 
-    if (pad.buttons[0]?.pressed) tap('Space');
-    if (pad.buttons[1]?.pressed) tap('KeyE');
-    if (pad.buttons[2]?.pressed) tap('KeyU');
-    if (pad.buttons[9]?.pressed) tap('KeyP');
+    buttonPressedOnce(pad, 0, 'Space');
+    buttonPressedOnce(pad, 1, 'KeyE');
+    buttonPressedOnce(pad, 2, 'KeyU');
+    buttonPressedOnce(pad, 9, 'KeyP');
+
     if (pad.buttons[7]?.pressed || pad.buttons[10]?.pressed) press('ShiftLeft');
     else release('ShiftLeft');
 
-    requestAnimationFrame(pollGamepad);
+    schedulePoll();
+  }
+
+  function pausePolling(reason) {
+    if (state.suspended) return;
+    state.suspended = true;
+    state.pauses += 1;
+    state.lastLifecycleReason = reason;
+    if (state.frameId) cancelAnimationFrame(state.frameId);
+    state.frameId = 0;
+    releaseAll(reason);
+  }
+
+  function resumePolling(reason) {
+    if (document.hidden || !state.suspended) return;
+    state.suspended = false;
+    state.resumes += 1;
+    state.lastLifecycleReason = reason;
+    schedulePoll();
   }
 
   function addGamepadStatus() {
     window.addEventListener('gamepadconnected', (event) => {
+      state.connectedPadIndex = event.gamepad.index;
       popup(`Controller connected: ${event.gamepad.id.slice(0, 28)}`);
       setHudError('none');
+      schedulePoll();
     });
-    window.addEventListener('gamepaddisconnected', () => {
-      ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft'].forEach(release);
+    window.addEventListener('gamepaddisconnected', (event) => {
+      if (state.connectedPadIndex === event.gamepad.index) state.connectedPadIndex = null;
+      releaseAll('controller-disconnected');
       popup('Controller disconnected');
     });
-    requestAnimationFrame(pollGamepad);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) pausePolling('visibility-hidden');
+      else resumePolling('visibility-visible');
+    });
+    window.addEventListener('pagehide', () => pausePolling('pagehide'), { passive: true });
+    window.addEventListener('pageshow', () => resumePolling('pageshow'), { passive: true });
+    document.addEventListener('freeze', () => pausePolling('freeze'));
+    document.addEventListener('resume', () => resumePolling('resume'));
+
+    schedulePoll();
   }
 
   function wireMissionClose() {
@@ -175,7 +281,11 @@
       reflectNetworkState();
       protectCanvasContext();
       respectReducedMotion();
-      window.NeonBlockInputPolish = { version: 1 };
+      window.NeonBlockInputPolish = {
+        version: 2,
+        releaseAll: () => releaseAll('manual'),
+        getStatus: () => ({ ...state, heldKeys: [...keyState].filter(([, held]) => held).map(([code]) => code) })
+      };
     } catch (error) {
       setHudError(error.message || String(error));
     }

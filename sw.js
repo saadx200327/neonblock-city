@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v103';
+const CACHE_VERSION = 'v104';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
@@ -15,7 +15,7 @@ const CORE_ASSETS = [
   './neonblock-qa-polish.js','./neonblock-driving-polish.js','./neonblock-mission-polish.js',
   './neonblock-mobile-mission-control.js','./neonblock-property-polish.js','./neonblock-property-slot-polish.js',
   './neonblock-performance-polish.js','./neonblock-progression-polish.js','./neonblock-world-safety-polish.js',
-  './neonblock-pwa-polish.js','./neonblock-cloud-polish.js','./neonblock-onboarding-polish.js',
+  './neonblock-pwa-polish.js','./neonblock-pwa-lifecycle-guard.js','./neonblock-cloud-polish.js','./neonblock-onboarding-polish.js',
   './neonblock-garage-polish.js','./neonblock-garage-data-guard.js','./neonblock-controls-coach-polish.js',
   './neonblock-city-pulse-polish.js','./neonblock-hosting-polish.js','./neonblock-roadside-polish.js',
   './neonblock-save-doctor-polish.js','./neonblock-map-polish.js','./neonblock-district-polish.js',

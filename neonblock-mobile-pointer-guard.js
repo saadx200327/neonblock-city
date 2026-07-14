@@ -7,7 +7,9 @@
   if (!sprintButton || !joystick) return;
 
   let sprintPointer = null;
+  let sprintPointerType = 'touch';
   let joystickPointer = null;
+  let joystickPointerType = 'touch';
   let blockedJoystickPointers = 0;
   let fallbackPointerEvents = 0;
   let releaseErrors = 0;
@@ -16,25 +18,36 @@
   let lastReleaseReason = 'startup';
   let lastReleaseAt = 0;
 
-  function createPointerRelease(type, pointerId) {
+  function normalizePointerType(pointerType) {
+    return ['mouse', 'pen', 'touch'].includes(pointerType) ? pointerType : 'touch';
+  }
+
+  function createPointerRelease(type, pointerId, pointerType = 'touch') {
+    const normalizedType = normalizePointerType(pointerType);
     try {
       return new PointerEvent(type, {
         bubbles: false,
         pointerId,
-        pointerType: 'touch'
+        pointerType: normalizedType,
+        isPrimary: true,
+        buttons: 0,
+        pressure: 0
       });
     } catch (_) {
       fallbackPointerEvents += 1;
       const event = new Event(type, { bubbles: false });
       try { Object.defineProperty(event, 'pointerId', { value: pointerId }); } catch (_) {}
-      try { Object.defineProperty(event, 'pointerType', { value: 'touch' }); } catch (_) {}
+      try { Object.defineProperty(event, 'pointerType', { value: normalizedType }); } catch (_) {}
+      try { Object.defineProperty(event, 'isPrimary', { value: true }); } catch (_) {}
+      try { Object.defineProperty(event, 'buttons', { value: 0 }); } catch (_) {}
+      try { Object.defineProperty(event, 'pressure', { value: 0 }); } catch (_) {}
       return event;
     }
   }
 
-  function dispatchRelease(target, type, pointerId) {
+  function dispatchRelease(target, type, pointerId, pointerType) {
     try {
-      target.dispatchEvent(createPointerRelease(type, pointerId));
+      target.dispatchEvent(createPointerRelease(type, pointerId, pointerType));
       return true;
     } catch (error) {
       releaseErrors += 1;
@@ -60,14 +73,16 @@
     if (pointerId !== null && sprintPointer !== pointerId) return false;
 
     const releasedPointer = sprintPointer;
+    const releasedPointerType = sprintPointerType;
     sprintPointer = null;
+    sprintPointerType = 'touch';
     sprintButton.classList.remove('is-held');
     sprintButton.setAttribute('aria-pressed', 'false');
     releaseCapture(sprintButton, releasedPointer);
 
     // The core game listens for pointerup on this button. Dispatch a safe
     // synthetic release when the browser ends the gesture outside the button.
-    dispatchRelease(sprintButton, 'pointerup', releasedPointer);
+    dispatchRelease(sprintButton, 'pointerup', releasedPointer, releasedPointerType);
     return true;
   }
 
@@ -79,19 +94,21 @@
     if (pointerId !== null && joystickPointer !== pointerId) return false;
 
     const releasedPointer = joystickPointer;
+    const releasedPointerType = joystickPointerType;
 
     // Keep the owner set while dispatching so capture-phase ownership checks
     // allow the core game's reset handler to receive this synthetic release.
-    dispatchRelease(joystick, 'pointerup', releasedPointer);
+    dispatchRelease(joystick, 'pointerup', releasedPointer, releasedPointerType);
     releaseCapture(joystick, releasedPointer);
     joystickPointer = null;
+    joystickPointerType = 'touch';
     if (joystickStick) joystickStick.style.transform = 'translate(0,0)';
     return true;
   }
 
   function releaseAll(reason = 'manual') {
-    const releasedSprint = releaseSprint();
-    const releasedJoystick = releaseJoystick();
+    const releasedSprint = sprintPointer !== null ? releaseSprint() : false;
+    const releasedJoystick = joystickPointer !== null ? releaseJoystick() : false;
     const hadHeldInput = releasedSprint || releasedJoystick;
     lastReleaseReason = reason;
     lastReleaseAt = Date.now();
@@ -103,6 +120,7 @@
   sprintButton.addEventListener('pointerdown', (event) => {
     if (sprintPointer !== null && sprintPointer !== event.pointerId) return;
     sprintPointer = event.pointerId;
+    sprintPointerType = normalizePointerType(event.pointerType);
     sprintButton.classList.add('is-held');
     sprintButton.setAttribute('aria-pressed', 'true');
     try { sprintButton.setPointerCapture(event.pointerId); } catch (_) {}
@@ -111,6 +129,7 @@
   sprintButton.addEventListener('pointerup', (event) => {
     if (sprintPointer === event.pointerId) {
       sprintPointer = null;
+      sprintPointerType = 'touch';
       sprintButton.classList.remove('is-held');
       sprintButton.setAttribute('aria-pressed', 'false');
     }
@@ -124,6 +143,7 @@
   joystick.addEventListener('pointerdown', (event) => {
     if (joystickPointer === null) {
       joystickPointer = event.pointerId;
+      joystickPointerType = normalizePointerType(event.pointerType);
       return;
     }
     if (joystickPointer !== event.pointerId) {
@@ -144,10 +164,16 @@
   });
 
   joystick.addEventListener('pointerup', (event) => {
-    if (joystickPointer === event.pointerId) joystickPointer = null;
+    if (joystickPointer === event.pointerId) {
+      joystickPointer = null;
+      joystickPointerType = 'touch';
+    }
   }, { passive: true });
   joystick.addEventListener('pointercancel', (event) => {
-    if (joystickPointer === event.pointerId) joystickPointer = null;
+    if (joystickPointer === event.pointerId) {
+      joystickPointer = null;
+      joystickPointerType = 'touch';
+    }
   }, { passive: true });
   joystick.addEventListener('lostpointercapture', (event) => releaseJoystick(event.pointerId), { passive: true });
 
@@ -173,10 +199,12 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
-    version: 5,
+    version: 6,
     getStatus: () => ({
       sprintPointer,
+      sprintPointerType,
       joystickPointer,
+      joystickPointerType,
       blockedJoystickPointers,
       fallbackPointerEvents,
       releaseErrors,

@@ -1,114 +1,64 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v101';
+const CACHE_VERSION = 'v102';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
+const OPTIONAL_PRECACHE_CONCURRENCY = 6;
 const CORE_ASSETS = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './vendor/three-0.158.0.min.js',
-  './firebase-backend.js',
-  './neonblock-runtime-guard.js',
-  './neonblock-action-edge-guard.js',
-  './neonblock-input-lifecycle-guard.js',
-  './neonblock-webgl-recovery-polish.js',
-  './neonblock-frame-lifecycle-guard.js',
-  './neonblock-viewport-recovery-polish.js',
-  './neonblock-startup-recovery-polish.js',
-  './neonblock-editable-input-guard.js',
-  './neonblock-pause-input-guard.js',
-  './neonblock-control-release-guard.js',
-  './neonblock-mobile-pointer-guard.js',
-  './neonblock-hardening.js',
-  './neonblock-input-polish.js',
-  './neonblock-economy-polish.js',
-  './neonblock-session-polish.js',
-  './neonblock-accessibility-polish.js',
-  './neonblock-camera-polish.js',
-  './neonblock-objective-polish.js',
-  './neonblock-feedback-polish.js',
-  './neonblock-wayfinding-polish.js',
-  './neonblock-mobile-shell-polish.js',
-  './neonblock-qa-polish.js',
-  './neonblock-driving-polish.js',
-  './neonblock-mission-polish.js',
-  './neonblock-mobile-mission-control.js',
-  './neonblock-property-polish.js',
-  './neonblock-property-slot-polish.js',
-  './neonblock-performance-polish.js',
-  './neonblock-progression-polish.js',
-  './neonblock-world-safety-polish.js',
-  './neonblock-pwa-polish.js',
-  './neonblock-cloud-polish.js',
-  './neonblock-onboarding-polish.js',
-  './neonblock-garage-polish.js',
-  './neonblock-garage-data-guard.js',
-  './neonblock-controls-coach-polish.js',
-  './neonblock-city-pulse-polish.js',
-  './neonblock-hosting-polish.js',
-  './neonblock-roadside-polish.js',
-  './neonblock-save-doctor-polish.js',
-  './neonblock-map-polish.js',
-  './neonblock-district-polish.js',
-  './neonblock-questlog-polish.js',
-  './neonblock-vehicle-health-polish.js',
-  './neonblock-emergency-kit-polish.js',
-  './neonblock-checkpoint-polish.js',
-  './neonblock-civic-polish.js',
-  './neonblock-sidejobs-polish.js',
-  './neonblock-inventory-polish.js',
-  './neonblock-banking-polish.js',
-  './neonblock-profile-polish.js',
-  './neonblock-city-events-polish.js',
-  './neonblock-transit-polish.js',
-  './neonblock-delivery-board-polish.js',
-  './neonblock-race-polish.js',
-  './neonblock-play-settings-polish.js',
-  './neonblock-streak-polish.js',
-  './neonblock-route-challenges-polish.js',
-  './neonblock-daily-bonus-polish.js',
-  './neonblock-ride-finder-polish.js',
-  './neonblock-property-finder-polish.js',
-  './neonblock-crate-finder-polish.js',
-  './neonblock-mobile-actions-polish.js',
-  './neonblock-mobile-viewport-guard.js',
-  './neonblock-save-resilience-polish.js',
-  './neonblock-vehicle-restore-polish.js',
-  './neonblock-lifecycle-save-polish.js',
-  './manifest.webmanifest',
-  './icon.svg'
+  './','./index.html','./styles.css','./app.js','./vendor/three-0.158.0.min.js','./firebase-backend.js',
+  './neonblock-runtime-guard.js','./neonblock-action-edge-guard.js','./neonblock-input-lifecycle-guard.js',
+  './neonblock-webgl-recovery-polish.js','./neonblock-frame-lifecycle-guard.js','./neonblock-viewport-recovery-polish.js',
+  './neonblock-startup-recovery-polish.js','./neonblock-editable-input-guard.js','./neonblock-pause-input-guard.js',
+  './neonblock-control-release-guard.js','./neonblock-mobile-pointer-guard.js','./neonblock-hardening.js',
+  './neonblock-input-polish.js','./neonblock-economy-polish.js','./neonblock-session-polish.js',
+  './neonblock-accessibility-polish.js','./neonblock-camera-polish.js','./neonblock-objective-polish.js',
+  './neonblock-feedback-polish.js','./neonblock-wayfinding-polish.js','./neonblock-mobile-shell-polish.js',
+  './neonblock-qa-polish.js','./neonblock-driving-polish.js','./neonblock-mission-polish.js',
+  './neonblock-mobile-mission-control.js','./neonblock-property-polish.js','./neonblock-property-slot-polish.js',
+  './neonblock-performance-polish.js','./neonblock-progression-polish.js','./neonblock-world-safety-polish.js',
+  './neonblock-pwa-polish.js','./neonblock-cloud-polish.js','./neonblock-onboarding-polish.js',
+  './neonblock-garage-polish.js','./neonblock-garage-data-guard.js','./neonblock-controls-coach-polish.js',
+  './neonblock-city-pulse-polish.js','./neonblock-hosting-polish.js','./neonblock-roadside-polish.js',
+  './neonblock-save-doctor-polish.js','./neonblock-map-polish.js','./neonblock-district-polish.js',
+  './neonblock-questlog-polish.js','./neonblock-vehicle-health-polish.js','./neonblock-emergency-kit-polish.js',
+  './neonblock-checkpoint-polish.js','./neonblock-civic-polish.js','./neonblock-sidejobs-polish.js',
+  './neonblock-inventory-polish.js','./neonblock-banking-polish.js','./neonblock-profile-polish.js',
+  './neonblock-city-events-polish.js','./neonblock-transit-polish.js','./neonblock-delivery-board-polish.js',
+  './neonblock-race-polish.js','./neonblock-play-settings-polish.js','./neonblock-streak-polish.js',
+  './neonblock-route-challenges-polish.js','./neonblock-daily-bonus-polish.js','./neonblock-ride-finder-polish.js',
+  './neonblock-property-finder-polish.js','./neonblock-crate-finder-polish.js','./neonblock-mobile-actions-polish.js',
+  './neonblock-mobile-viewport-guard.js','./neonblock-save-resilience-polish.js','./neonblock-vehicle-restore-polish.js',
+  './neonblock-lifecycle-save-polish.js','./manifest.webmanifest','./icon.svg'
 ];
-
 const REQUIRED_ASSET_COUNT = 5;
 
+async function precacheOptionalAssets(cache, assets, concurrency = OPTIONAL_PRECACHE_CONCURRENCY) {
+  let cursor = 0;
+  let failures = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), assets.length || 1);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < assets.length) {
+      const asset = assets[cursor++];
+      try { await cache.add(asset); } catch (_) { failures += 1; }
+    }
+  });
+  await Promise.all(workers);
+  return failures;
+}
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      await cache.addAll(CORE_ASSETS.slice(0, REQUIRED_ASSET_COUNT));
-      const results = await Promise.allSettled(
-        CORE_ASSETS.slice(REQUIRED_ASSET_COUNT).map((asset) => cache.add(asset))
-      );
-      const failures = results.filter((result) => result.status === 'rejected').length;
-      if (failures) console.warn(`[NeonBlock SW] ${failures} optional assets were not precached.`);
-      await self.skipWaiting();
-    })
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
+    await cache.addAll(CORE_ASSETS.slice(0, REQUIRED_ASSET_COUNT));
+    const failures = await precacheOptionalAssets(cache, CORE_ASSETS.slice(REQUIRED_ASSET_COUNT));
+    if (failures) console.warn(`[NeonBlock SW] ${failures} optional assets were not precached.`);
+    await self.skipWaiting();
+  }));
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(
-      keys
-        .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
-        .map((key) => caches.delete(key))
-    );
-
-    if (self.registration.navigationPreload) {
-      await self.registration.navigationPreload.enable();
-    }
-
+    await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
+    if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
     await self.clients.claim();
   })());
 });
@@ -119,12 +69,10 @@ self.addEventListener('message', (event) => {
     event.waitUntil(self.skipWaiting());
     return;
   }
-
   if (type === 'NEONBLOCK_SW_STATUS') {
     event.source?.postMessage?.({
-      type: 'NEONBLOCK_SW_STATUS',
-      cacheName: CACHE_NAME,
-      version: CACHE_VERSION
+      type: 'NEONBLOCK_SW_STATUS', cacheName: CACHE_NAME, version: CACHE_VERSION,
+      optionalPrecacheConcurrency: OPTIONAL_PRECACHE_CONCURRENCY
     });
   }
 });
@@ -133,22 +81,16 @@ async function currentCacheMatch(request) {
   const cache = await caches.open(CACHE_NAME);
   return cache.match(request);
 }
-
 async function cachedAppShell() {
   return (await currentCacheMatch('./index.html')) || (await currentCacheMatch('./'));
 }
-
 async function trimRuntimeCache(cache) {
   const requests = await cache.keys();
-  const protectedUrls = new Set(
-    CORE_ASSETS.map((asset) => new URL(asset, self.registration.scope).href)
-  );
+  const protectedUrls = new Set(CORE_ASSETS.map((asset) => new URL(asset, self.registration.scope).href));
   const removable = requests.filter((request) => !protectedUrls.has(request.url));
   const overflow = removable.length - MAX_RUNTIME_ENTRIES;
-  if (overflow <= 0) return;
-  await Promise.all(removable.slice(0, overflow).map((request) => cache.delete(request)));
+  if (overflow > 0) await Promise.all(removable.slice(0, overflow).map((request) => cache.delete(request)));
 }
-
 function isCacheableResponse(response) {
   if (!response || !response.ok || response.type === 'opaque' || response.status === 206) return false;
   const cacheControl = response.headers.get('Cache-Control') || '';
@@ -157,54 +99,38 @@ function isCacheableResponse(response) {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET') return;
-  if (request.headers.has('range')) return;
+  if (request.method !== 'GET' || request.headers.has('range')) return;
   if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return;
-
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
         const response = (await event.preloadResponse) || (await fetch(request));
         if (isCacheableResponse(response)) {
           const copy = response.clone();
-          event.waitUntil(
-            caches.open(CACHE_NAME)
-              .then((cache) => cache.put('./index.html', copy))
-              .catch(() => {})
-          );
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy)).catch(() => {}));
           return response;
         }
-
         if (response) return response;
         return await cachedAppShell();
-      } catch (error) {
-        return (await cachedAppShell()) || new Response(
-          'NeonBlock City is offline and its app shell is not cached yet.',
-          { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
-        );
+      } catch (_) {
+        return (await cachedAppShell()) || new Response('NeonBlock City is offline and its app shell is not cached yet.', {
+          status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+        });
       }
     })());
     return;
   }
-
   event.respondWith((async () => {
     const cached = await currentCacheMatch(request);
     if (cached) return cached;
-
     const response = await fetch(request);
     if (!isCacheableResponse(response)) return response;
-
-    const requestUrl = new URL(request.url);
-    if (requestUrl.origin === self.location.origin) {
+    if (new URL(request.url).origin === self.location.origin) {
       const copy = response.clone();
-      event.waitUntil(
-        caches.open(CACHE_NAME)
-          .then(async (cache) => {
-            await cache.put(request, copy);
-            await trimRuntimeCache(cache);
-          })
-          .catch(() => {})
-      );
+      event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
+        await cache.put(request, copy);
+        await trimRuntimeCache(cache);
+      }).catch(() => {}));
     }
     return response;
   })());

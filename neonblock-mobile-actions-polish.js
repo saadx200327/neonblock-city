@@ -24,6 +24,9 @@
   let lastFocusedElement = null;
   let focusRestores = 0;
   let lifecycleCloses = 0;
+  let inputReleases = 0;
+  let releasedInputSources = 0;
+  let lastInputReleaseReason = null;
 
   function readOpenState() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}').open === true; }
@@ -41,6 +44,29 @@
   function optionalButtons(container) {
     return Array.from(container?.querySelectorAll?.('button.action-btn[id^="btn-mobile-"]') || [])
       .filter((button) => !CORE_IDS.has(button.id));
+  }
+
+  function releaseGameplayInputs(reason) {
+    const releaseTargets = [
+      window.NeonBlockMobilePointerGuard,
+      window.NeonBlockPauseInputGuard,
+      window.NeonBlockEditableInputGuard,
+      window.NeonBlockControlReleaseGuard
+    ];
+    let released = 0;
+    for (const target of releaseTargets) {
+      if (typeof target?.releaseAll !== 'function') continue;
+      try {
+        target.releaseAll();
+        released += 1;
+      } catch {}
+    }
+    if (released) {
+      inputReleases += 1;
+      releasedInputSources += released;
+      lastInputReleaseReason = reason;
+    }
+    return released;
   }
 
   function injectStyles() {
@@ -163,7 +189,10 @@
   function setOpen(next, options = {}) {
     const wasOpen = open;
     const shouldOpen = Boolean(next) && isMobileLayout() && optionalButtons(grid).length > 0;
-    if (shouldOpen && !wasOpen) lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : moreButton;
+    if (shouldOpen && !wasOpen) {
+      lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : moreButton;
+      releaseGameplayInputs('drawer-opened');
+    }
     open = shouldOpen;
     writeOpenState();
     if (drawer) {
@@ -250,7 +279,7 @@
 
   function getSnapshot() {
     return {
-      version: 3,
+      version: 4,
       mobileLayout: isMobileLayout(),
       open,
       drawerHidden: drawer?.hidden ?? true,
@@ -258,6 +287,9 @@
       triggerBound: moreButton?.dataset.neonblockMobileActionsBound === 'true',
       focusRestores,
       lifecycleCloses,
+      inputReleases,
+      releasedInputSources,
+      lastInputReleaseReason,
       coreActions: Array.from(rail?.querySelectorAll?.('button.action-btn') || []).filter((button) => CORE_IDS.has(button.id)).map((button) => button.id),
       drawerActions: optionalButtons(grid).map((button) => ({ id: button.id, label: button.textContent.trim() }))
     };

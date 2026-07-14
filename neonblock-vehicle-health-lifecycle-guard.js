@@ -2,11 +2,12 @@
   'use strict';
 
   const diagnostics = {
-    version: 1,
+    version: 2,
     pageshowRecoveries: 0,
     resumeRecoveries: 0,
     visibilityRecoveries: 0,
     skippedHidden: 0,
+    coalescedRecoveries: 0,
     refreshFailures: 0,
     lastReason: 'startup'
   };
@@ -19,11 +20,13 @@
       diagnostics.skippedHidden += 1;
       return false;
     }
-    if (recoveryQueued) return false;
+    if (recoveryQueued) {
+      diagnostics.coalescedRecoveries += 1;
+      return false;
+    }
 
     recoveryQueued = true;
     requestAnimationFrame(() => {
-      recoveryQueued = false;
       try {
         // The existing vehicle-health module restarts its interval from its
         // visibilitychange handler. Dispatching here restores that scheduler
@@ -33,6 +36,8 @@
       } catch (error) {
         diagnostics.refreshFailures += 1;
         diagnostics.lastReason = `${reason}: ${error?.message || error || 'recovery failed'}`;
+      } finally {
+        recoveryQueued = false;
       }
     });
     return true;
@@ -55,7 +60,7 @@
   });
 
   window.NeonBlockVehicleHealthLifecycleGuard = Object.freeze({
-    version: 1,
+    version: 2,
     recover: () => recover('manual'),
     getStatus: () => ({ ...diagnostics, recoveryQueued })
   });

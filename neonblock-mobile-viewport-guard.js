@@ -2,12 +2,15 @@
   'use strict';
 
   const DEBOUNCE_MS = 120;
+  const OFFSET_RELEASE_THRESHOLD = 24;
   let refreshTimer = 0;
   let refreshes = 0;
   let releases = 0;
   let skippedRefreshes = 0;
   let pauseCount = 0;
   let resumeCount = 0;
+  let meaningfulChanges = 0;
+  let offsetReleases = 0;
   let frozen = false;
   let pageHidden = false;
   let lastReason = 'boot';
@@ -89,20 +92,29 @@
     refresh(reason, true);
   }
 
-  function viewportChangedMeaningfully() {
+  function classifyViewportChange() {
     const next = snapshotViewport();
-    return next.orientation !== lastViewport.orientation ||
+    const offsetChanged = Math.abs(next.offsetLeft - lastViewport.offsetLeft) > OFFSET_RELEASE_THRESHOLD ||
+      Math.abs(next.offsetTop - lastViewport.offsetTop) > OFFSET_RELEASE_THRESHOLD;
+    const meaningful = next.orientation !== lastViewport.orientation ||
       Math.abs(next.width - lastViewport.width) > 48 ||
       Math.abs(next.height - lastViewport.height) > 96 ||
-      Math.abs(next.scale - lastViewport.scale) > 0.15;
+      Math.abs(next.scale - lastViewport.scale) > 0.15 ||
+      offsetChanged;
+    return { meaningful, offsetChanged };
   }
 
   function onViewportChange(reason) {
-    refresh(reason, viewportChangedMeaningfully());
+    const change = classifyViewportChange();
+    if (change.meaningful) meaningfulChanges += 1;
+    if (change.offsetChanged) offsetReleases += 1;
+    refresh(reason, change.meaningful);
   }
 
   addEventListener('orientationchange', () => refresh('orientationchange', true), { passive: true });
   addEventListener('resize', () => onViewportChange('window-resize'), { passive: true });
+  addEventListener('blur', () => pause('window-blur'), { passive: true });
+  addEventListener('focus', () => resume('window-focus'), { passive: true });
   addEventListener('pagehide', () => {
     pageHidden = true;
     pause('pagehide');
@@ -123,7 +135,7 @@
 
   if (window.visualViewport) {
     visualViewport.addEventListener('resize', () => onViewportChange('visual-viewport-resize'), { passive: true });
-    visualViewport.addEventListener('scroll', () => refresh('visual-viewport-scroll'), { passive: true });
+    visualViewport.addEventListener('scroll', () => onViewportChange('visual-viewport-scroll'), { passive: true });
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -135,7 +147,7 @@
     refresh: (reason = 'manual') => refresh(reason, false),
     releaseAndRefresh: (reason = 'manual') => refresh(reason, true),
     getStatus: () => ({
-      version: 2,
+      version: 3,
       pending: Boolean(refreshTimer),
       paused: isPaused(),
       frozen,
@@ -145,6 +157,9 @@
       skippedRefreshes,
       pauseCount,
       resumeCount,
+      meaningfulChanges,
+      offsetReleases,
+      offsetReleaseThreshold: OFFSET_RELEASE_THRESHOLD,
       lastReason,
       lastLifecycleReason,
       viewport: snapshotViewport()

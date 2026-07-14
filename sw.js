@@ -1,11 +1,14 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v107';
+const CACHE_VERSION = 'v108';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
 const OPTIONAL_PRECACHE_RETRIES = 1;
 let lastOptionalPrecacheFailures = 0;
 let lastOptionalPrecacheRecoveries = 0;
+let activationRepairAttempts = 0;
+let activationRepairRecoveries = 0;
+let activationRepairFailures = 0;
 let offlineAssetFallbacks = 0;
 let lastOfflineAssetUrl = null;
 let navigationFallbacks = 0;
@@ -68,6 +71,22 @@ async function precacheOptionalAssets(cache, assets, concurrency = OPTIONAL_PREC
   return { failures, recoveries };
 }
 
+async function repairMissingCoreAssets(cache) {
+  const optionalAssets = CORE_ASSETS.slice(REQUIRED_ASSET_COUNT);
+  const checks = await Promise.all(optionalAssets.map(async (asset) => ({ asset, cached: Boolean(await cache.match(asset)) })));
+  const missing = checks.filter((entry) => !entry.cached).map((entry) => entry.asset);
+  activationRepairAttempts = missing.length;
+  activationRepairRecoveries = 0;
+  activationRepairFailures = 0;
+  if (!missing.length) return;
+
+  const result = await precacheOptionalAssets(cache, missing);
+  activationRepairRecoveries = missing.length - result.failures;
+  activationRepairFailures = result.failures;
+  if (activationRepairRecoveries) console.info(`[NeonBlock SW] Repaired ${activationRepairRecoveries} missing cached asset(s) during activation.`);
+  if (activationRepairFailures) console.warn(`[NeonBlock SW] ${activationRepairFailures} cached asset(s) remain unavailable after activation repair.`);
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
     await cache.addAll(CORE_ASSETS.slice(0, REQUIRED_ASSET_COUNT));
@@ -84,6 +103,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
+    const cache = await caches.open(CACHE_NAME);
+    await repairMissingCoreAssets(cache);
     if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
     await self.clients.claim();
   })());
@@ -102,6 +123,9 @@ self.addEventListener('message', (event) => {
       optionalPrecacheRetries: OPTIONAL_PRECACHE_RETRIES,
       lastOptionalPrecacheFailures,
       lastOptionalPrecacheRecoveries,
+      activationRepairAttempts,
+      activationRepairRecoveries,
+      activationRepairFailures,
       offlineAssetFallbacks,
       lastOfflineAssetUrl,
       navigationFallbacks,

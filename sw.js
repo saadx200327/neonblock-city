@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v102';
+const CACHE_VERSION = 'v103';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
@@ -8,8 +8,8 @@ const CORE_ASSETS = [
   './neonblock-runtime-guard.js','./neonblock-action-edge-guard.js','./neonblock-input-lifecycle-guard.js',
   './neonblock-webgl-recovery-polish.js','./neonblock-frame-lifecycle-guard.js','./neonblock-viewport-recovery-polish.js',
   './neonblock-startup-recovery-polish.js','./neonblock-editable-input-guard.js','./neonblock-pause-input-guard.js',
-  './neonblock-control-release-guard.js','./neonblock-mobile-pointer-guard.js','./neonblock-hardening.js',
-  './neonblock-input-polish.js','./neonblock-economy-polish.js','./neonblock-session-polish.js',
+  './neonblock-control-release-guard.js','./neonblock-mobile-pointer-guard.js','./neonblock-touch-context-guard.js',
+  './neonblock-hardening.js','./neonblock-input-polish.js','./neonblock-economy-polish.js','./neonblock-session-polish.js',
   './neonblock-accessibility-polish.js','./neonblock-camera-polish.js','./neonblock-objective-polish.js',
   './neonblock-feedback-polish.js','./neonblock-wayfinding-polish.js','./neonblock-mobile-shell-polish.js',
   './neonblock-qa-polish.js','./neonblock-driving-polish.js','./neonblock-mission-polish.js',
@@ -19,15 +19,15 @@ const CORE_ASSETS = [
   './neonblock-garage-polish.js','./neonblock-garage-data-guard.js','./neonblock-controls-coach-polish.js',
   './neonblock-city-pulse-polish.js','./neonblock-hosting-polish.js','./neonblock-roadside-polish.js',
   './neonblock-save-doctor-polish.js','./neonblock-map-polish.js','./neonblock-district-polish.js',
-  './neonblock-questlog-polish.js','./neonblock-vehicle-health-polish.js','./neonblock-emergency-kit-polish.js',
-  './neonblock-checkpoint-polish.js','./neonblock-civic-polish.js','./neonblock-sidejobs-polish.js',
-  './neonblock-inventory-polish.js','./neonblock-banking-polish.js','./neonblock-profile-polish.js',
-  './neonblock-city-events-polish.js','./neonblock-transit-polish.js','./neonblock-delivery-board-polish.js',
-  './neonblock-race-polish.js','./neonblock-play-settings-polish.js','./neonblock-streak-polish.js',
-  './neonblock-route-challenges-polish.js','./neonblock-daily-bonus-polish.js','./neonblock-ride-finder-polish.js',
-  './neonblock-property-finder-polish.js','./neonblock-crate-finder-polish.js','./neonblock-mobile-actions-polish.js',
-  './neonblock-mobile-viewport-guard.js','./neonblock-save-resilience-polish.js','./neonblock-vehicle-restore-polish.js',
-  './neonblock-lifecycle-save-polish.js','./manifest.webmanifest','./icon.svg'
+  './neonblock-questlog-polish.js','./neonblock-vehicle-health-polish.js','./neonblock-vehicle-health-lifecycle-guard.js',
+  './neonblock-emergency-kit-polish.js','./neonblock-checkpoint-polish.js','./neonblock-civic-polish.js',
+  './neonblock-sidejobs-polish.js','./neonblock-inventory-polish.js','./neonblock-banking-polish.js',
+  './neonblock-profile-polish.js','./neonblock-city-events-polish.js','./neonblock-transit-polish.js',
+  './neonblock-delivery-board-polish.js','./neonblock-race-polish.js','./neonblock-play-settings-polish.js',
+  './neonblock-streak-polish.js','./neonblock-route-challenges-polish.js','./neonblock-daily-bonus-polish.js',
+  './neonblock-ride-finder-polish.js','./neonblock-property-finder-polish.js','./neonblock-crate-finder-polish.js',
+  './neonblock-mobile-actions-polish.js','./neonblock-mobile-viewport-guard.js','./neonblock-save-resilience-polish.js',
+  './neonblock-vehicle-restore-polish.js','./neonblock-lifecycle-save-polish.js','./manifest.webmanifest','./icon.svg'
 ];
 const REQUIRED_ASSET_COUNT = 5;
 

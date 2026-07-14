@@ -1,8 +1,11 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v104';
+const CACHE_VERSION = 'v105';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
+const OPTIONAL_PRECACHE_RETRIES = 1;
+let lastOptionalPrecacheFailures = 0;
+let lastOptionalPrecacheRecoveries = 0;
 const CORE_ASSETS = [
   './','./index.html','./styles.css','./app.js','./vendor/three-0.158.0.min.js','./firebase-backend.js',
   './neonblock-runtime-guard.js','./neonblock-action-edge-guard.js','./neonblock-input-lifecycle-guard.js',
@@ -31,25 +34,44 @@ const CORE_ASSETS = [
 ];
 const REQUIRED_ASSET_COUNT = 5;
 
+async function addOptionalAsset(cache, asset, retries = OPTIONAL_PRECACHE_RETRIES) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      await cache.add(asset);
+      return attempt;
+    } catch (_) {
+      if (attempt >= retries) return -1;
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
+  return -1;
+}
+
 async function precacheOptionalAssets(cache, assets, concurrency = OPTIONAL_PRECACHE_CONCURRENCY) {
   let cursor = 0;
   let failures = 0;
+  let recoveries = 0;
   const workerCount = Math.min(Math.max(1, concurrency), assets.length || 1);
   const workers = Array.from({ length: workerCount }, async () => {
     while (cursor < assets.length) {
       const asset = assets[cursor++];
-      try { await cache.add(asset); } catch (_) { failures += 1; }
+      const retryCount = await addOptionalAsset(cache, asset);
+      if (retryCount < 0) failures += 1;
+      else if (retryCount > 0) recoveries += 1;
     }
   });
   await Promise.all(workers);
-  return failures;
+  return { failures, recoveries };
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
     await cache.addAll(CORE_ASSETS.slice(0, REQUIRED_ASSET_COUNT));
-    const failures = await precacheOptionalAssets(cache, CORE_ASSETS.slice(REQUIRED_ASSET_COUNT));
-    if (failures) console.warn(`[NeonBlock SW] ${failures} optional assets were not precached.`);
+    const result = await precacheOptionalAssets(cache, CORE_ASSETS.slice(REQUIRED_ASSET_COUNT));
+    lastOptionalPrecacheFailures = result.failures;
+    lastOptionalPrecacheRecoveries = result.recoveries;
+    if (result.recoveries) console.info(`[NeonBlock SW] Recovered ${result.recoveries} optional precache request(s) after retry.`);
+    if (result.failures) console.warn(`[NeonBlock SW] ${result.failures} optional assets were not precached.`);
     await self.skipWaiting();
   }));
 });
@@ -72,7 +94,10 @@ self.addEventListener('message', (event) => {
   if (type === 'NEONBLOCK_SW_STATUS') {
     event.source?.postMessage?.({
       type: 'NEONBLOCK_SW_STATUS', cacheName: CACHE_NAME, version: CACHE_VERSION,
-      optionalPrecacheConcurrency: OPTIONAL_PRECACHE_CONCURRENCY
+      optionalPrecacheConcurrency: OPTIONAL_PRECACHE_CONCURRENCY,
+      optionalPrecacheRetries: OPTIONAL_PRECACHE_RETRIES,
+      lastOptionalPrecacheFailures,
+      lastOptionalPrecacheRecoveries
     });
   }
 });

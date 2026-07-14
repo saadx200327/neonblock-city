@@ -17,9 +17,15 @@
   let releasedKeys = 0;
   let fallbackDispatches = 0;
   let dispatchFailures = 0;
+  let lifecycleReleases = 0;
+  let overlayAttachAttempts = 0;
+  let overlayAttachSuccesses = 0;
   let lastBlockedCode = null;
   let lastReleaseReason = null;
   let lastPauseState = false;
+  let observedOverlay = null;
+  let overlayObserver = null;
+  let discoveryObserver = null;
 
   function isPaused() {
     const overlay = document.getElementById('pause-overlay');
@@ -64,6 +70,12 @@
     return pending.length;
   }
 
+  function releaseForLifecycle(reason) {
+    const count = releaseGameplayKeys(reason);
+    if (count > 0) lifecycleReleases += 1;
+    return count;
+  }
+
   function trackKeydown(event) {
     if (!GAMEPLAY_CODES.has(event.code)) return;
 
@@ -88,19 +100,46 @@
     lastPauseState = paused;
   }
 
-  window.addEventListener('keydown', trackKeydown, true);
-  window.addEventListener('keyup', trackKeyup, true);
-  window.addEventListener('blur', () => releaseGameplayKeys('window-blur'));
+  function attachPauseOverlay() {
+    overlayAttachAttempts += 1;
+    const overlay = document.getElementById('pause-overlay');
+    if (!overlay || overlay === observedOverlay) return Boolean(overlay);
+
+    overlayObserver?.disconnect();
+    observedOverlay = overlay;
+    lastPauseState = isPaused();
+    overlayObserver = new MutationObserver(syncPauseState);
+    overlayObserver.observe(overlay, {
+      attributes: true,
+      attributeFilter: ['class', 'hidden', 'aria-hidden']
+    });
+    overlayAttachSuccesses += 1;
+    discoveryObserver?.disconnect();
+    discoveryObserver = null;
+    return true;
+  }
 
   function observePauseOverlay() {
-    const overlay = document.getElementById('pause-overlay');
-    if (!overlay) return;
-    lastPauseState = isPaused();
-    new MutationObserver(syncPauseState).observe(overlay, {
-      attributes: true,
-      attributeFilter: ['class']
+    if (attachPauseOverlay()) return;
+    if (discoveryObserver || !document.documentElement) return;
+
+    discoveryObserver = new MutationObserver(() => {
+      attachPauseOverlay();
+    });
+    discoveryObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
     });
   }
+
+  window.addEventListener('keydown', trackKeydown, true);
+  window.addEventListener('keyup', trackKeyup, true);
+  window.addEventListener('blur', () => releaseForLifecycle('window-blur'));
+  window.addEventListener('pagehide', () => releaseForLifecycle('pagehide'), { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseForLifecycle('visibility-hidden');
+  });
+  document.addEventListener('freeze', () => releaseForLifecycle('freeze'));
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observePauseOverlay, { once: true });
@@ -109,17 +148,22 @@
   }
 
   window.NeonBlockPauseInputGuard = Object.freeze({
-    version: 2,
+    version: 3,
     isPaused,
     releaseAll: () => releaseGameplayKeys('manual'),
+    refreshOverlay: attachPauseOverlay,
     getStatus() {
       return {
         active: true,
         paused: isPaused(),
         heldCodes: [...heldCodes],
+        overlayObserved: Boolean(observedOverlay?.isConnected),
+        overlayAttachAttempts,
+        overlayAttachSuccesses,
         blockedKeydowns,
         releases,
         releasedKeys,
+        lifecycleReleases,
         fallbackDispatches,
         dispatchFailures,
         lastBlockedCode,

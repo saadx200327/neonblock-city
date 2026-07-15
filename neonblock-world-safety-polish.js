@@ -6,6 +6,7 @@
   const MAX_SAFE_COORDINATE = 250000;
   const MIN_Y = -8;
   const GROUND_Y_MAX = 1.2;
+  const VEHICLE_GROUND_Y_MAX = 2.5;
   const MAX_GROUNDED_VERTICAL_SPEED = 0.35;
   const SCAN_INTERVAL_MS = 1200;
   const BOOT_INTERVAL_MS = 400;
@@ -26,6 +27,7 @@
   let stableWrites = 0;
   let skippedStableWrites = 0;
   let airborneStableSkips = 0;
+  let vehicleAirborneSkips = 0;
   let lastAirborneSkipAt = 0;
   let frozen = false;
   let pageHidden = false;
@@ -111,9 +113,16 @@
   }
 
   function isGroundedSnapshot(snap, pos) {
-    if (snap?.player?.activeVehicle) return true;
     const verticalSpeed = snap?.player?.vel?.y;
-    return pos.y <= GROUND_Y_MAX && (!finite(verticalSpeed) || Math.abs(verticalSpeed) <= MAX_GROUNDED_VERTICAL_SPEED);
+    const speedSafe = !finite(verticalSpeed) || Math.abs(verticalSpeed) <= MAX_GROUNDED_VERTICAL_SPEED;
+    const vehicle = snap?.player?.activeVehicle;
+    if (vehicle) {
+      const vehicleY = vehicle.position?.y;
+      const heightSafe = finite(vehicleY) ? vehicleY <= VEHICLE_GROUND_Y_MAX : pos.y <= VEHICLE_GROUND_Y_MAX;
+      if (!heightSafe || !speedSafe) vehicleAirborneSkips += 1;
+      return heightSafe && speedSafe;
+    }
+    return pos.y <= GROUND_Y_MAX && speedSafe;
   }
 
   function rememberStableSpot(snap) {
@@ -307,9 +316,10 @@
     saveNow: () => persistStableSpot(true),
     refresh: () => { scan(); updatePanel(); },
     getStatus: () => ({
-      version: 5,
+      version: 6,
       maxSafeCoordinate: MAX_SAFE_COORDINATE,
       groundYMax: GROUND_Y_MAX,
+      vehicleGroundYMax: VEHICLE_GROUND_Y_MAX,
       maxGroundedVerticalSpeed: MAX_GROUNDED_VERTICAL_SPEED,
       lastFixAt,
       lastReport,
@@ -318,6 +328,7 @@
       stableWrites,
       skippedStableWrites,
       airborneStableSkips,
+      vehicleAirborneSkips,
       lastAirborneSkipAt,
       lastStablePersistAt,
       active: Boolean(scanTimer || bootTimer),

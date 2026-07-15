@@ -22,6 +22,9 @@
   let controlReleases = 0;
   let avoidedFailedLoadReleases = 0;
   let failures = 0;
+  let thrownFailures = 0;
+  let rejectedFailures = 0;
+  let failureEvents = 0;
   let loadGeneration = 0;
   let noticeGeneration = 0;
   let noticeHideTimer = 0;
@@ -29,6 +32,7 @@
   let lastLoadedAt = 0;
   let lastUnsuccessfulLoadAt = 0;
   let lastEmptySlotAt = 0;
+  let lastFailureAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -151,18 +155,25 @@
     }
   }
 
+  function emitFailureEvent(slot, reason, error) {
+    lastFailureAt = Date.now();
+    failureEvents += 1;
+    window.dispatchEvent(new CustomEvent('neonblock:saveloadfailed', {
+      detail: {
+        slot,
+        at: lastFailureAt,
+        reason,
+        message: String(error?.message || reason).slice(0, 160)
+      }
+    }));
+  }
+
   function recordUnsuccessfulLoad(slot, result) {
     unsuccessfulLoads += 1;
     avoidedFailedLoadReleases += 1;
     lastUnsuccessfulLoadAt = Date.now();
     lastError = 'save load returned false';
-    window.dispatchEvent(new CustomEvent('neonblock:saveloadfailed', {
-      detail: {
-        slot,
-        at: lastUnsuccessfulLoadAt,
-        reason: 'loader-returned-false'
-      }
-    }));
+    emitFailureEvent(slot, 'loader-returned-false');
     return result;
   }
 
@@ -187,15 +198,21 @@
     return result;
   }
 
-  function recordFailure(error, isAsync, generation) {
+  function recordFailure(error, isAsync, generation, slot) {
     if (generation !== loadGeneration) {
       staleLoadFailures += 1;
       return;
     }
 
     failures += 1;
-    if (isAsync) asyncFailures += 1;
+    if (isAsync) {
+      asyncFailures += 1;
+      rejectedFailures += 1;
+    } else {
+      thrownFailures += 1;
+    }
     lastError = error?.message || 'save load failed';
+    emitFailureEvent(slot, isAsync ? 'loader-rejected' : 'loader-threw', error);
   }
 
   function install() {
@@ -221,7 +238,7 @@
       try {
         result = originalLoadState(slot, data);
       } catch (error) {
-        recordFailure(error, false, generation);
+        recordFailure(error, false, generation, resolvedSlot);
         throw error;
       }
 
@@ -235,7 +252,7 @@
           },
           error => {
             pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
-            recordFailure(error, true, generation);
+            recordFailure(error, true, generation, resolvedSlot);
             throw error;
           }
         );
@@ -262,7 +279,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 12,
+      version: 13,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -286,11 +303,15 @@
       controlReleases,
       avoidedFailedLoadReleases,
       failures,
+      thrownFailures,
+      rejectedFailures,
+      failureEvents,
       loadGeneration,
       lastSlot,
       lastLoadedAt,
       lastUnsuccessfulLoadAt,
       lastEmptySlotAt,
+      lastFailureAt,
       lastError
     })
   };

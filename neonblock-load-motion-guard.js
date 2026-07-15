@@ -14,12 +14,15 @@
   let staleResetSkips = 0;
   let emptyLoadSkips = 0;
   let emptyLoadNotices = 0;
+  let staleNoticeHides = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
   let avoidedFailedLoadReleases = 0;
   let failures = 0;
   let loadGeneration = 0;
+  let noticeGeneration = 0;
+  let noticeHideTimer = 0;
   let lastSlot = null;
   let lastLoadedAt = 0;
   let lastUnsuccessfulLoadAt = 0;
@@ -68,13 +71,26 @@
   }
 
   function showEmptySlotNotice(slot) {
+    const generation = ++noticeGeneration;
     const notify = () => {
+      if (generation !== noticeGeneration) return;
+
       const popup = document.getElementById('reward-popup');
       if (popup) {
         popup.textContent = `No save found in ${slot}`;
         popup.classList.remove('hidden');
-        setTimeout(() => popup.classList.add('hidden'), 1600);
+
+        if (noticeHideTimer) clearTimeout(noticeHideTimer);
+        noticeHideTimer = setTimeout(() => {
+          noticeHideTimer = 0;
+          if (generation !== noticeGeneration) {
+            staleNoticeHides += 1;
+            return;
+          }
+          popup.classList.add('hidden');
+        }, 1600);
       }
+
       emptyLoadNotices += 1;
       lastEmptySlotAt = Date.now();
       window.dispatchEvent(new CustomEvent('neonblock:saveloadempty', {
@@ -228,7 +244,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 9,
+      version: 10,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -242,6 +258,9 @@
       staleResetSkips,
       emptyLoadSkips,
       emptyLoadNotices,
+      staleNoticeHides,
+      noticeGeneration,
+      noticeHidePending: Boolean(noticeHideTimer),
       motionResets,
       deferredMotionResets,
       controlReleases,

@@ -8,6 +8,7 @@
   let asyncFailures = 0;
   let staleResetSkips = 0;
   let emptyLoadSkips = 0;
+  let emptyLoadNotices = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -15,6 +16,7 @@
   let loadGeneration = 0;
   let lastSlot = null;
   let lastLoadedAt = 0;
+  let lastEmptySlotAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -55,6 +57,28 @@
     } catch (error) {
       lastError = error?.message || 'save slot lookup failed';
       return true;
+    }
+  }
+
+  function showEmptySlotNotice(slot) {
+    const notify = () => {
+      const popup = document.getElementById('reward-popup');
+      if (popup) {
+        popup.textContent = `No save found in ${slot}`;
+        popup.classList.remove('hidden');
+        setTimeout(() => popup.classList.add('hidden'), 1600);
+      }
+      emptyLoadNotices += 1;
+      lastEmptySlotAt = Date.now();
+      window.dispatchEvent(new CustomEvent('neonblock:saveloadempty', {
+        detail: { slot, at: lastEmptySlotAt }
+      }));
+    };
+
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(notify);
+    } else {
+      setTimeout(notify, 0);
     }
   }
 
@@ -115,12 +139,14 @@
     const originalLoadState = game.loadState.bind(game);
     game.loadState = function guardedLoadState(slot, data) {
       loadCalls += 1;
-      const resolvedSlot = slot || game.getSnapshot?.()?.player?.slot || 'slot1';
+      const currentSlot = game.getSnapshot?.()?.player?.slot || 'slot1';
+      const resolvedSlot = slot || currentSlot;
       lastSlot = resolvedSlot;
 
       if (!hasLoadPayload(resolvedSlot, data)) {
         emptyLoadSkips += 1;
-        return originalLoadState(slot, data);
+        showEmptySlotNotice(resolvedSlot);
+        return false;
       }
 
       const generation = ++loadGeneration;
@@ -165,7 +191,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 3,
+      version: 4,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -173,6 +199,7 @@
       asyncFailures,
       staleResetSkips,
       emptyLoadSkips,
+      emptyLoadNotices,
       motionResets,
       deferredMotionResets,
       controlReleases,
@@ -180,6 +207,7 @@
       loadGeneration,
       lastSlot,
       lastLoadedAt,
+      lastEmptySlotAt,
       lastError
     })
   };

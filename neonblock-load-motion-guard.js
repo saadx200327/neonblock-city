@@ -19,6 +19,8 @@
   let successfulLoadNoticeInvalidations = 0;
   let slotResolutionFailures = 0;
   let snapshotResetFailures = 0;
+  let velocityResetFailures = 0;
+  let vehicleResetFailures = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -38,6 +40,8 @@
   let lastFailureAt = 0;
   let lastSlotResolutionFailureAt = 0;
   let lastSnapshotResetFailureAt = 0;
+  let lastVelocityResetFailureAt = 0;
+  let lastVehicleResetFailureAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -62,22 +66,38 @@
 
     if (!player) return false;
 
-    if (player.vel?.set) {
-      player.vel.set(0, 0, 0);
-      motionResets += 1;
-    } else if (player.vel) {
-      player.vel.x = 0;
-      player.vel.y = 0;
-      player.vel.z = 0;
-      motionResets += 1;
+    let resetAnyMotion = false;
+    try {
+      if (player.vel?.set) {
+        player.vel.set(0, 0, 0);
+        motionResets += 1;
+        resetAnyMotion = true;
+      } else if (player.vel) {
+        player.vel.x = 0;
+        player.vel.y = 0;
+        player.vel.z = 0;
+        motionResets += 1;
+        resetAnyMotion = true;
+      }
+    } catch (error) {
+      velocityResetFailures += 1;
+      lastVelocityResetFailureAt = Date.now();
+      lastError = error?.message || 'player velocity reset failed';
     }
 
-    if (player.activeVehicle?.position && player.mesh?.position) {
-      player.activeVehicle.position.copy(player.mesh.position);
-      player.activeVehicle.position.y = 0.65;
+    try {
+      if (player.activeVehicle?.position && player.mesh?.position) {
+        player.activeVehicle.position.copy(player.mesh.position);
+        player.activeVehicle.position.y = 0.65;
+        resetAnyMotion = true;
+      }
+    } catch (error) {
+      vehicleResetFailures += 1;
+      lastVehicleResetFailureAt = Date.now();
+      lastError = error?.message || 'active vehicle reset failed';
     }
 
-    return true;
+    return resetAnyMotion;
   }
 
   function hasLoadPayload(slot, data) {
@@ -328,7 +348,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 16,
+      version: 17,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -347,6 +367,8 @@
       successfulLoadNoticeInvalidations,
       slotResolutionFailures,
       snapshotResetFailures,
+      velocityResetFailures,
+      vehicleResetFailures,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),
       motionResets,
@@ -366,6 +388,8 @@
       lastFailureAt,
       lastSlotResolutionFailureAt,
       lastSnapshotResetFailureAt,
+      lastVelocityResetFailureAt,
+      lastVehicleResetFailureAt,
       lastError
     })
   };

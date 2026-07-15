@@ -24,6 +24,7 @@
   let failures = 0;
   let thrownFailures = 0;
   let rejectedFailures = 0;
+  let thenableInspectionFailures = 0;
   let failureEvents = 0;
   let loadGeneration = 0;
   let noticeGeneration = 0;
@@ -198,7 +199,7 @@
     return result;
   }
 
-  function recordFailure(error, isAsync, generation, slot) {
+  function recordFailure(error, isAsync, generation, slot, reasonOverride) {
     if (generation !== loadGeneration) {
       staleLoadFailures += 1;
       return;
@@ -212,7 +213,29 @@
       thrownFailures += 1;
     }
     lastError = error?.message || 'save load failed';
-    emitFailureEvent(slot, isAsync ? 'loader-rejected' : 'loader-threw', error);
+    emitFailureEvent(slot, reasonOverride || (isAsync ? 'loader-rejected' : 'loader-threw'), error);
+  }
+
+  function getThenMethod(result, generation, slot) {
+    if (!result || (typeof result !== 'object' && typeof result !== 'function')) return null;
+
+    try {
+      return typeof result.then === 'function' ? result.then : null;
+    } catch (error) {
+      thenableInspectionFailures += 1;
+      recordFailure(error, false, generation, slot, 'loader-then-access-threw');
+      throw error;
+    }
+  }
+
+  function assimilateThenable(result, thenMethod) {
+    return new Promise((resolve, reject) => {
+      try {
+        thenMethod.call(result, resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   function install() {
@@ -242,10 +265,11 @@
         throw error;
       }
 
-      if (result && typeof result.then === 'function') {
+      const thenMethod = getThenMethod(result, generation, resolvedSlot);
+      if (thenMethod) {
         asyncLoads += 1;
         pendingAsyncLoads += 1;
-        return Promise.resolve(result).then(
+        return assimilateThenable(result, thenMethod).then(
           value => {
             pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
             return completeLoad(generation, resolvedSlot, value, true);
@@ -279,7 +303,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 13,
+      version: 14,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -305,6 +329,7 @@
       failures,
       thrownFailures,
       rejectedFailures,
+      thenableInspectionFailures,
       failureEvents,
       loadGeneration,
       lastSlot,

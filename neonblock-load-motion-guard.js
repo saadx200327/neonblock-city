@@ -133,13 +133,14 @@
     return result;
   }
 
-  function completeLoad(generation, slot, result) {
+  function completeLoad(generation, slot, result, releaseOnSuccess = false) {
     if (generation !== loadGeneration) {
       staleLoadCompletions += 1;
       return result;
     }
     if (result === false) return recordUnsuccessfulLoad(slot, result);
 
+    if (releaseOnSuccess) releaseControls();
     resetMotion();
     scheduleDeferredResets(generation);
     successfulLoads += 1;
@@ -191,13 +192,12 @@
       }
 
       if (result && typeof result.then === 'function') {
-        releaseControls();
         asyncLoads += 1;
         pendingAsyncLoads += 1;
         return Promise.resolve(result).then(
           value => {
             pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
-            return completeLoad(generation, resolvedSlot, value);
+            return completeLoad(generation, resolvedSlot, value, true);
           },
           error => {
             pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
@@ -228,7 +228,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 8,
+      version: 9,
       wrapped,
       loadCalls,
       successfulLoads,

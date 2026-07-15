@@ -15,6 +15,7 @@
   let emptyLoadSkips = 0;
   let emptyLoadNotices = 0;
   let staleNoticeHides = 0;
+  let supersededNoticeHides = 0;
   let successfulLoadNoticeInvalidations = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
@@ -83,12 +84,13 @@
 
   function showEmptySlotNotice(slot) {
     const generation = ++noticeGeneration;
+    const noticeText = `No save found in ${slot}`;
     const notify = () => {
       if (generation !== noticeGeneration) return;
 
       const popup = document.getElementById('reward-popup');
       if (popup) {
-        popup.textContent = `No save found in ${slot}`;
+        popup.textContent = noticeText;
         popup.classList.remove('hidden');
 
         if (noticeHideTimer) clearTimeout(noticeHideTimer);
@@ -96,6 +98,10 @@
           noticeHideTimer = 0;
           if (generation !== noticeGeneration) {
             staleNoticeHides += 1;
+            return;
+          }
+          if (popup.textContent !== noticeText) {
+            supersededNoticeHides += 1;
             return;
           }
           popup.classList.add('hidden');
@@ -256,7 +262,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 11,
+      version: 12,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -271,6 +277,7 @@
       emptyLoadSkips,
       emptyLoadNotices,
       staleNoticeHides,
+      supersededNoticeHides,
       successfulLoadNoticeInvalidations,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),

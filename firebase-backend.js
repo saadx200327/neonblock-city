@@ -20,6 +20,7 @@
   let lastSaveAt = 0;
   let lastLoadAt = 0;
   let queuedSaveCount = 0;
+  let exactSnapshotSaves = 0;
   const slotSaveQueues = new Map();
 
   const bridge = {
@@ -29,7 +30,7 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 3,
+        version: 4,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
@@ -37,6 +38,7 @@
         retryPending: Boolean(retryTimer),
         pendingSaveSlots: Array.from(slotSaveQueues.keys()),
         queuedSaveCount,
+        exactSnapshotSaves,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -124,7 +126,8 @@
             .doc(activeUser.uid)
             .collection('slots')
             .doc(safeSlot)
-            .set({ ...safeData, updatedAt: Date.now() }, { merge: true });
+            .set({ ...safeData, updatedAt: Date.now() });
+          exactSnapshotSaves += 1;
           lastSaveAt = Date.now();
           lastError = null;
           return true;

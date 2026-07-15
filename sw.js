@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'neonblock-city-';
-const CACHE_VERSION = 'v108';
+const CACHE_VERSION = 'v109';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 96;
 const OPTIONAL_PRECACHE_CONCURRENCY = 6;
@@ -37,7 +37,7 @@ const CORE_ASSETS = [
   './neonblock-streak-polish.js','./neonblock-route-challenges-polish.js','./neonblock-daily-bonus-polish.js',
   './neonblock-ride-finder-polish.js','./neonblock-property-finder-polish.js','./neonblock-crate-finder-polish.js',
   './neonblock-mobile-actions-polish.js','./neonblock-mobile-viewport-guard.js','./neonblock-save-resilience-polish.js',
-  './neonblock-vehicle-restore-polish.js','./neonblock-lifecycle-save-polish.js','./manifest.webmanifest','./icon.svg'
+  './neonblock-load-motion-guard.js','./neonblock-vehicle-restore-polish.js','./neonblock-lifecycle-save-polish.js','./manifest.webmanifest','./icon.svg'
 ];
 const REQUIRED_ASSET_COUNT = 5;
 

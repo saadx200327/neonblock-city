@@ -21,6 +21,8 @@
   let snapshotResetFailures = 0;
   let velocityResetFailures = 0;
   let vehicleResetFailures = 0;
+  let worldSafetyRefreshes = 0;
+  let worldSafetyRefreshFailures = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -42,6 +44,7 @@
   let lastSnapshotResetFailureAt = 0;
   let lastVelocityResetFailureAt = 0;
   let lastVehicleResetFailureAt = 0;
+  let lastWorldSafetyRefreshFailureAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -50,6 +53,20 @@
       if (released !== false) controlReleases += 1;
     } catch (error) {
       lastError = error?.message || 'control release failed';
+    }
+  }
+
+  function refreshWorldSafety() {
+    try {
+      if (typeof window.NeonBlockWorldSafety?.refresh !== 'function') return false;
+      window.NeonBlockWorldSafety.refresh();
+      worldSafetyRefreshes += 1;
+      return true;
+    } catch (error) {
+      worldSafetyRefreshFailures += 1;
+      lastWorldSafetyRefreshFailureAt = Date.now();
+      lastError = error?.message || 'world safety refresh failed';
+      return false;
     }
   }
 
@@ -183,7 +200,7 @@
       }
 
       if (resetMotion()) deferredMotionResets += 1;
-      window.NeonBlockWorldSafety?.refresh?.();
+      refreshWorldSafety();
       remaining -= 1;
 
       if (remaining > 0) {
@@ -241,7 +258,7 @@
     window.dispatchEvent(new CustomEvent('neonblock:saveloaded', {
       detail: { slot, at: lastLoadedAt }
     }));
-    window.NeonBlockWorldSafety?.refresh?.();
+    refreshWorldSafety();
     return result;
   }
 
@@ -348,7 +365,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 17,
+      version: 18,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -369,6 +386,8 @@
       snapshotResetFailures,
       velocityResetFailures,
       vehicleResetFailures,
+      worldSafetyRefreshes,
+      worldSafetyRefreshFailures,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),
       motionResets,
@@ -390,6 +409,7 @@
       lastSnapshotResetFailureAt,
       lastVelocityResetFailureAt,
       lastVehicleResetFailureAt,
+      lastWorldSafetyRefreshFailureAt,
       lastError
     })
   };

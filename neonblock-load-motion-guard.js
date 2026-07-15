@@ -4,6 +4,7 @@
   let wrapped = false;
   let loadCalls = 0;
   let successfulLoads = 0;
+  let unsuccessfulLoads = 0;
   let asyncLoads = 0;
   let asyncFailures = 0;
   let staleResetSkips = 0;
@@ -16,6 +17,7 @@
   let loadGeneration = 0;
   let lastSlot = null;
   let lastLoadedAt = 0;
+  let lastUnsuccessfulLoadAt = 0;
   let lastEmptySlotAt = 0;
   let lastError = null;
 
@@ -111,8 +113,23 @@
     }
   }
 
+  function recordUnsuccessfulLoad(slot, result) {
+    unsuccessfulLoads += 1;
+    lastUnsuccessfulLoadAt = Date.now();
+    lastError = 'save load returned false';
+    window.dispatchEvent(new CustomEvent('neonblock:saveloadfailed', {
+      detail: {
+        slot,
+        at: lastUnsuccessfulLoadAt,
+        reason: 'loader-returned-false'
+      }
+    }));
+    return result;
+  }
+
   function completeLoad(generation, slot, result) {
     if (generation !== loadGeneration) return result;
+    if (result === false) return recordUnsuccessfulLoad(slot, result);
 
     resetMotion();
     scheduleDeferredResets(generation);
@@ -191,10 +208,11 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 4,
+      version: 5,
       wrapped,
       loadCalls,
       successfulLoads,
+      unsuccessfulLoads,
       asyncLoads,
       asyncFailures,
       staleResetSkips,
@@ -207,6 +225,7 @@
       loadGeneration,
       lastSlot,
       lastLoadedAt,
+      lastUnsuccessfulLoadAt,
       lastEmptySlotAt,
       lastError
     })

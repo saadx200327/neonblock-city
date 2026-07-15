@@ -3,7 +3,10 @@
 
   let wrapped = false;
   let loadCalls = 0;
+  let successfulLoads = 0;
+  let emptyLoadSkips = 0;
   let motionResets = 0;
+  let deferredMotionResets = 0;
   let controlReleases = 0;
   let failures = 0;
   let lastSlot = null;
@@ -41,6 +44,29 @@
     return true;
   }
 
+  function hasLoadPayload(slot, data) {
+    if (data !== null && data !== undefined) return true;
+    try {
+      return localStorage.getItem(`neonblock:${slot}`) !== null;
+    } catch (error) {
+      lastError = error?.message || 'save slot lookup failed';
+      return true;
+    }
+  }
+
+  function scheduleDeferredReset() {
+    const run = () => {
+      if (resetMotion()) deferredMotionResets += 1;
+      window.NeonBlockWorldSafety?.refresh?.();
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(run);
+    } else {
+      setTimeout(run, 0);
+    }
+  }
+
   function install() {
     const game = window.NeonBlockGame;
     if (wrapped || !game?.loadState) return false;
@@ -49,11 +75,19 @@
     game.loadState = function guardedLoadState(slot, data) {
       loadCalls += 1;
       lastSlot = slot || game.getSnapshot?.()?.player?.slot || 'slot1';
+
+      if (!hasLoadPayload(lastSlot, data)) {
+        emptyLoadSkips += 1;
+        return originalLoadState(slot, data);
+      }
+
       releaseControls();
 
       try {
         const result = originalLoadState(slot, data);
         resetMotion();
+        scheduleDeferredReset();
+        successfulLoads += 1;
         lastLoadedAt = Date.now();
         lastError = null;
         window.dispatchEvent(new CustomEvent('neonblock:saveloaded', {
@@ -85,10 +119,13 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 1,
+      version: 2,
       wrapped,
       loadCalls,
+      successfulLoads,
+      emptyLoadSkips,
       motionResets,
+      deferredMotionResets,
       controlReleases,
       failures,
       lastSlot,

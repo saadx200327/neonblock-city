@@ -18,6 +18,7 @@
   let supersededNoticeHides = 0;
   let successfulLoadNoticeInvalidations = 0;
   let slotResolutionFailures = 0;
+  let snapshotResetFailures = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -36,6 +37,7 @@
   let lastEmptySlotAt = 0;
   let lastFailureAt = 0;
   let lastSlotResolutionFailureAt = 0;
+  let lastSnapshotResetFailureAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -48,7 +50,16 @@
   }
 
   function resetMotion() {
-    const player = window.NeonBlockGame?.getSnapshot?.()?.player;
+    let player;
+    try {
+      player = window.NeonBlockGame?.getSnapshot?.()?.player;
+    } catch (error) {
+      snapshotResetFailures += 1;
+      lastSnapshotResetFailureAt = Date.now();
+      lastError = error?.message || 'motion reset snapshot failed';
+      return false;
+    }
+
     if (!player) return false;
 
     if (player.vel?.set) {
@@ -317,7 +328,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 15,
+      version: 16,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -335,6 +346,7 @@
       supersededNoticeHides,
       successfulLoadNoticeInvalidations,
       slotResolutionFailures,
+      snapshotResetFailures,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),
       motionResets,
@@ -353,6 +365,7 @@
       lastEmptySlotAt,
       lastFailureAt,
       lastSlotResolutionFailureAt,
+      lastSnapshotResetFailureAt,
       lastError
     })
   };

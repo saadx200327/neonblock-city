@@ -17,6 +17,7 @@
   let staleNoticeHides = 0;
   let supersededNoticeHides = 0;
   let successfulLoadNoticeInvalidations = 0;
+  let slotResolutionFailures = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -34,6 +35,7 @@
   let lastUnsuccessfulLoadAt = 0;
   let lastEmptySlotAt = 0;
   let lastFailureAt = 0;
+  let lastSlotResolutionFailureAt = 0;
   let lastError = null;
 
   function releaseControls() {
@@ -74,6 +76,19 @@
     } catch (error) {
       lastError = error?.message || 'save slot lookup failed';
       return true;
+    }
+  }
+
+  function resolveLoadSlot(game, requestedSlot) {
+    if (requestedSlot) return requestedSlot;
+
+    try {
+      return game.getSnapshot?.()?.player?.slot || 'slot1';
+    } catch (error) {
+      slotResolutionFailures += 1;
+      lastSlotResolutionFailureAt = Date.now();
+      lastError = error?.message || 'save slot resolution failed';
+      return 'slot1';
     }
   }
 
@@ -245,8 +260,7 @@
     const originalLoadState = game.loadState.bind(game);
     game.loadState = function guardedLoadState(slot, data) {
       loadCalls += 1;
-      const currentSlot = game.getSnapshot?.()?.player?.slot || 'slot1';
-      const resolvedSlot = slot || currentSlot;
+      const resolvedSlot = resolveLoadSlot(game, slot);
       const generation = ++loadGeneration;
       lastSlot = resolvedSlot;
 
@@ -303,7 +317,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 14,
+      version: 15,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -320,6 +334,7 @@
       staleNoticeHides,
       supersededNoticeHides,
       successfulLoadNoticeInvalidations,
+      slotResolutionFailures,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),
       motionResets,
@@ -337,6 +352,7 @@
       lastUnsuccessfulLoadAt,
       lastEmptySlotAt,
       lastFailureAt,
+      lastSlotResolutionFailureAt,
       lastError
     })
   };

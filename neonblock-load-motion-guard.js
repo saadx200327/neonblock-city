@@ -15,6 +15,7 @@
   let emptyLoadSkips = 0;
   let emptyLoadNotices = 0;
   let staleNoticeHides = 0;
+  let successfulLoadNoticeInvalidations = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
@@ -68,6 +69,16 @@
       lastError = error?.message || 'save slot lookup failed';
       return true;
     }
+  }
+
+  function invalidateEmptySlotNotice() {
+    noticeGeneration += 1;
+    if (!noticeHideTimer) return false;
+
+    clearTimeout(noticeHideTimer);
+    noticeHideTimer = 0;
+    successfulLoadNoticeInvalidations += 1;
+    return true;
   }
 
   function showEmptySlotNotice(slot) {
@@ -156,6 +167,7 @@
     }
     if (result === false) return recordUnsuccessfulLoad(slot, result);
 
+    invalidateEmptySlotNotice();
     if (releaseOnSuccess) releaseControls();
     resetMotion();
     scheduleDeferredResets(generation);
@@ -244,7 +256,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 10,
+      version: 11,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -259,6 +271,7 @@
       emptyLoadSkips,
       emptyLoadNotices,
       staleNoticeHides,
+      successfulLoadNoticeInvalidations,
       noticeGeneration,
       noticeHidePending: Boolean(noticeHideTimer),
       motionResets,

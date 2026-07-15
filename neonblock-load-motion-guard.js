@@ -4,11 +4,15 @@
   let wrapped = false;
   let loadCalls = 0;
   let successfulLoads = 0;
+  let asyncLoads = 0;
+  let asyncFailures = 0;
+  let staleResetSkips = 0;
   let emptyLoadSkips = 0;
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
   let failures = 0;
+  let loadGeneration = 0;
   let lastSlot = null;
   let lastLoadedAt = 0;
   let lastError = null;
@@ -54,10 +58,26 @@
     }
   }
 
-  function scheduleDeferredReset() {
+  function scheduleDeferredResets(generation) {
+    let remaining = 3;
+
     const run = () => {
+      if (generation !== loadGeneration) {
+        staleResetSkips += 1;
+        return;
+      }
+
       if (resetMotion()) deferredMotionResets += 1;
       window.NeonBlockWorldSafety?.refresh?.();
+      remaining -= 1;
+
+      if (remaining > 0) {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(run);
+        } else {
+          setTimeout(run, 16);
+        }
+      }
     };
 
     if (typeof requestAnimationFrame === 'function') {
@@ -67,6 +87,27 @@
     }
   }
 
+  function completeLoad(generation, slot, result) {
+    if (generation !== loadGeneration) return result;
+
+    resetMotion();
+    scheduleDeferredResets(generation);
+    successfulLoads += 1;
+    lastLoadedAt = Date.now();
+    lastError = null;
+    window.dispatchEvent(new CustomEvent('neonblock:saveloaded', {
+      detail: { slot, at: lastLoadedAt }
+    }));
+    window.NeonBlockWorldSafety?.refresh?.();
+    return result;
+  }
+
+  function recordFailure(error, isAsync) {
+    failures += 1;
+    if (isAsync) asyncFailures += 1;
+    lastError = error?.message || 'save load failed';
+  }
+
   function install() {
     const game = window.NeonBlockGame;
     if (wrapped || !game?.loadState) return false;
@@ -74,32 +115,37 @@
     const originalLoadState = game.loadState.bind(game);
     game.loadState = function guardedLoadState(slot, data) {
       loadCalls += 1;
-      lastSlot = slot || game.getSnapshot?.()?.player?.slot || 'slot1';
+      const resolvedSlot = slot || game.getSnapshot?.()?.player?.slot || 'slot1';
+      lastSlot = resolvedSlot;
 
-      if (!hasLoadPayload(lastSlot, data)) {
+      if (!hasLoadPayload(resolvedSlot, data)) {
         emptyLoadSkips += 1;
         return originalLoadState(slot, data);
       }
 
+      const generation = ++loadGeneration;
       releaseControls();
 
+      let result;
       try {
-        const result = originalLoadState(slot, data);
-        resetMotion();
-        scheduleDeferredReset();
-        successfulLoads += 1;
-        lastLoadedAt = Date.now();
-        lastError = null;
-        window.dispatchEvent(new CustomEvent('neonblock:saveloaded', {
-          detail: { slot: lastSlot, at: lastLoadedAt }
-        }));
-        window.NeonBlockWorldSafety?.refresh?.();
-        return result;
+        result = originalLoadState(slot, data);
       } catch (error) {
-        failures += 1;
-        lastError = error?.message || 'save load failed';
+        recordFailure(error, false);
         throw error;
       }
+
+      if (result && typeof result.then === 'function') {
+        asyncLoads += 1;
+        return Promise.resolve(result).then(
+          value => completeLoad(generation, resolvedSlot, value),
+          error => {
+            recordFailure(error, true);
+            throw error;
+          }
+        );
+      }
+
+      return completeLoad(generation, resolvedSlot, result);
     };
 
     wrapped = true;
@@ -119,15 +165,19 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 2,
+      version: 3,
       wrapped,
       loadCalls,
       successfulLoads,
+      asyncLoads,
+      asyncFailures,
+      staleResetSkips,
       emptyLoadSkips,
       motionResets,
       deferredMotionResets,
       controlReleases,
       failures,
+      loadGeneration,
       lastSlot,
       lastLoadedAt,
       lastError

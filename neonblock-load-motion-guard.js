@@ -17,6 +17,7 @@
   let motionResets = 0;
   let deferredMotionResets = 0;
   let controlReleases = 0;
+  let avoidedFailedLoadReleases = 0;
   let failures = 0;
   let loadGeneration = 0;
   let lastSlot = null;
@@ -119,6 +120,7 @@
 
   function recordUnsuccessfulLoad(slot, result) {
     unsuccessfulLoads += 1;
+    avoidedFailedLoadReleases += 1;
     lastUnsuccessfulLoadAt = Date.now();
     lastError = 'save load returned false';
     window.dispatchEvent(new CustomEvent('neonblock:saveloadfailed', {
@@ -180,8 +182,6 @@
         return false;
       }
 
-      releaseControls();
-
       let result;
       try {
         result = originalLoadState(slot, data);
@@ -191,6 +191,7 @@
       }
 
       if (result && typeof result.then === 'function') {
+        releaseControls();
         asyncLoads += 1;
         pendingAsyncLoads += 1;
         return Promise.resolve(result).then(
@@ -206,6 +207,7 @@
         );
       }
 
+      if (result !== false) releaseControls();
       return completeLoad(generation, resolvedSlot, result);
     };
 
@@ -226,7 +228,7 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 7,
+      version: 8,
       wrapped,
       loadCalls,
       successfulLoads,
@@ -243,6 +245,7 @@
       motionResets,
       deferredMotionResets,
       controlReleases,
+      avoidedFailedLoadReleases,
       failures,
       loadGeneration,
       lastSlot,

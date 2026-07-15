@@ -7,6 +7,8 @@
   let unsuccessfulLoads = 0;
   let asyncLoads = 0;
   let asyncFailures = 0;
+  let pendingAsyncLoads = 0;
+  let emptyLoadInvalidations = 0;
   let staleLoadCompletions = 0;
   let staleLoadFailures = 0;
   let staleResetSkips = 0;
@@ -168,15 +170,16 @@
       loadCalls += 1;
       const currentSlot = game.getSnapshot?.()?.player?.slot || 'slot1';
       const resolvedSlot = slot || currentSlot;
+      const generation = ++loadGeneration;
       lastSlot = resolvedSlot;
 
       if (!hasLoadPayload(resolvedSlot, data)) {
         emptyLoadSkips += 1;
+        if (pendingAsyncLoads > 0) emptyLoadInvalidations += pendingAsyncLoads;
         showEmptySlotNotice(resolvedSlot);
         return false;
       }
 
-      const generation = ++loadGeneration;
       releaseControls();
 
       let result;
@@ -189,9 +192,14 @@
 
       if (result && typeof result.then === 'function') {
         asyncLoads += 1;
+        pendingAsyncLoads += 1;
         return Promise.resolve(result).then(
-          value => completeLoad(generation, resolvedSlot, value),
+          value => {
+            pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
+            return completeLoad(generation, resolvedSlot, value);
+          },
           error => {
+            pendingAsyncLoads = Math.max(0, pendingAsyncLoads - 1);
             recordFailure(error, true, generation);
             throw error;
           }
@@ -218,13 +226,15 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 6,
+      version: 7,
       wrapped,
       loadCalls,
       successfulLoads,
       unsuccessfulLoads,
       asyncLoads,
       asyncFailures,
+      pendingAsyncLoads,
+      emptyLoadInvalidations,
       staleLoadCompletions,
       staleLoadFailures,
       staleResetSkips,

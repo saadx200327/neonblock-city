@@ -7,6 +7,8 @@
   let unsuccessfulLoads = 0;
   let asyncLoads = 0;
   let asyncFailures = 0;
+  let staleLoadCompletions = 0;
+  let staleLoadFailures = 0;
   let staleResetSkips = 0;
   let emptyLoadSkips = 0;
   let emptyLoadNotices = 0;
@@ -128,7 +130,10 @@
   }
 
   function completeLoad(generation, slot, result) {
-    if (generation !== loadGeneration) return result;
+    if (generation !== loadGeneration) {
+      staleLoadCompletions += 1;
+      return result;
+    }
     if (result === false) return recordUnsuccessfulLoad(slot, result);
 
     resetMotion();
@@ -143,7 +148,12 @@
     return result;
   }
 
-  function recordFailure(error, isAsync) {
+  function recordFailure(error, isAsync, generation) {
+    if (generation !== loadGeneration) {
+      staleLoadFailures += 1;
+      return;
+    }
+
     failures += 1;
     if (isAsync) asyncFailures += 1;
     lastError = error?.message || 'save load failed';
@@ -173,7 +183,7 @@
       try {
         result = originalLoadState(slot, data);
       } catch (error) {
-        recordFailure(error, false);
+        recordFailure(error, false, generation);
         throw error;
       }
 
@@ -182,7 +192,7 @@
         return Promise.resolve(result).then(
           value => completeLoad(generation, resolvedSlot, value),
           error => {
-            recordFailure(error, true);
+            recordFailure(error, true, generation);
             throw error;
           }
         );
@@ -208,13 +218,15 @@
     install,
     resetMotion,
     getStatus: () => ({
-      version: 5,
+      version: 6,
       wrapped,
       loadCalls,
       successfulLoads,
       unsuccessfulLoads,
       asyncLoads,
       asyncFailures,
+      staleLoadCompletions,
+      staleLoadFailures,
       staleResetSkips,
       emptyLoadSkips,
       emptyLoadNotices,

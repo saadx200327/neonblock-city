@@ -23,6 +23,8 @@
   let exactSnapshotSaves = 0;
   let capturedPayloadSnapshots = 0;
   let payloadSnapshotFailures = 0;
+  let bridgeGeneration = 0;
+  let staleSessionOperations = 0;
   const slotSaveQueues = new Map();
 
   const bridge = {
@@ -32,7 +34,7 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 5,
+        version: 6,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
@@ -43,6 +45,8 @@
         exactSnapshotSaves,
         capturedPayloadSnapshots,
         payloadSnapshotFailures,
+        bridgeGeneration,
+        staleSessionOperations,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -93,6 +97,7 @@
   }
 
   function disableBridge(error) {
+    bridgeGeneration += 1;
     bridge.enabled = false;
     bridge.save = async () => false;
     bridge.load = async () => null;
@@ -122,7 +127,18 @@
     }
   }
 
+  function isActiveBridgeSession(generation, user) {
+    const activeUser = getCurrentUser();
+    const activeDb = getFirestore();
+    if (generation !== bridgeGeneration || !activeUser || !activeDb || activeUser.uid !== user.uid) {
+      staleSessionOperations += 1;
+      return null;
+    }
+    return { user: activeUser, db: activeDb };
+  }
+
   function configureBridge(user, db) {
+    const generation = ++bridgeGeneration;
     bridge.enabled = true;
     lastError = null;
     lastEnabledAt = Date.now();
@@ -132,16 +148,11 @@
         const safeSlot = normalizeSlot(slot);
         const safeData = snapshotPayload(data);
         return await queueSlotSave(safeSlot, async () => {
-          const activeUser = getCurrentUser();
-          const activeDb = getFirestore();
-          if (!activeUser || !activeDb || activeUser.uid !== user.uid) {
-            disableBridge();
-            scheduleRetry();
-            return false;
-          }
+          const session = isActiveBridgeSession(generation, user);
+          if (!session) return false;
 
-          await activeDb.collection(COLLECTION)
-            .doc(activeUser.uid)
+          await session.db.collection(COLLECTION)
+            .doc(session.user.uid)
             .collection('slots')
             .doc(safeSlot)
             .set({ ...safeData, updatedAt: Date.now() });
@@ -151,6 +162,10 @@
           return true;
         });
       } catch (error) {
+        if (generation !== bridgeGeneration) {
+          staleSessionOperations += 1;
+          return false;
+        }
         lastError = error;
         console.warn('[NeonBlock City] Cloud save failed; local save remains available:', error);
         return false;
@@ -162,24 +177,27 @@
         const safeSlot = normalizeSlot(slot);
         await waitForSlotSave(safeSlot);
 
-        const activeUser = getCurrentUser();
-        const activeDb = getFirestore();
-        if (!activeUser || !activeDb || activeUser.uid !== user.uid) {
-          disableBridge();
-          scheduleRetry();
-          return null;
-        }
+        const session = isActiveBridgeSession(generation, user);
+        if (!session) return null;
 
-        const snapshot = await activeDb.collection(COLLECTION)
-          .doc(activeUser.uid)
+        const snapshot = await session.db.collection(COLLECTION)
+          .doc(session.user.uid)
           .collection('slots')
           .doc(safeSlot)
           .get();
+        if (generation !== bridgeGeneration) {
+          staleSessionOperations += 1;
+          return null;
+        }
         lastLoadAt = Date.now();
         lastError = null;
         const data = snapshot && snapshot.exists ? snapshot.data() : null;
         return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
       } catch (error) {
+        if (generation !== bridgeGeneration) {
+          staleSessionOperations += 1;
+          return null;
+        }
         lastError = error;
         console.warn('[NeonBlock City] Cloud load failed; local save remains available:', error);
         return null;

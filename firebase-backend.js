@@ -21,6 +21,8 @@
   let lastLoadAt = 0;
   let queuedSaveCount = 0;
   let exactSnapshotSaves = 0;
+  let capturedPayloadSnapshots = 0;
+  let payloadSnapshotFailures = 0;
   const slotSaveQueues = new Map();
 
   const bridge = {
@@ -30,7 +32,7 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 4,
+        version: 5,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
@@ -39,6 +41,8 @@
         pendingSaveSlots: Array.from(slotSaveQueues.keys()),
         queuedSaveCount,
         exactSnapshotSaves,
+        capturedPayloadSnapshots,
+        payloadSnapshotFailures,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -72,6 +76,20 @@
       throw new TypeError('Cloud-save data must be an object.');
     }
     return data;
+  }
+
+  function snapshotPayload(data) {
+    const normalized = normalizePayload(data);
+    try {
+      const snapshot = typeof structuredClone === 'function'
+        ? structuredClone(normalized)
+        : JSON.parse(JSON.stringify(normalized));
+      capturedPayloadSnapshots += 1;
+      return snapshot;
+    } catch (error) {
+      payloadSnapshotFailures += 1;
+      throw new TypeError(`Cloud-save data could not be snapshotted: ${error?.message || 'unsupported value'}`);
+    }
   }
 
   function disableBridge(error) {
@@ -112,7 +130,7 @@
     bridge.save = async (slot, data) => {
       try {
         const safeSlot = normalizeSlot(slot);
-        const safeData = normalizePayload(data);
+        const safeData = snapshotPayload(data);
         return await queueSlotSave(safeSlot, async () => {
           const activeUser = getCurrentUser();
           const activeDb = getFirestore();

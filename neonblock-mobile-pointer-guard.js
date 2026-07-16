@@ -14,6 +14,7 @@
   let fallbackPointerEvents = 0;
   let releaseErrors = 0;
   let lifecycleReleases = 0;
+  let orientationReleases = 0;
   let skippedInactiveReleases = 0;
   let lastReleaseReason = 'startup';
   let lastReleaseAt = 0;
@@ -116,6 +117,10 @@
     return hadHeldInput;
   }
 
+  function releaseForOrientationChange() {
+    if (releaseAll('orientation-change')) orientationReleases += 1;
+  }
+
   sprintButton.setAttribute('aria-pressed', 'false');
   sprintButton.addEventListener('pointerdown', (event) => {
     if (sprintPointer !== null && sprintPointer !== event.pointerId) return;
@@ -187,6 +192,8 @@
   }, true);
   window.addEventListener('blur', () => releaseAll('blur'));
   window.addEventListener('pagehide', () => releaseAll('pagehide'));
+  window.addEventListener('orientationchange', releaseForOrientationChange);
+  screen.orientation?.addEventListener?.('change', releaseForOrientationChange);
   document.addEventListener('freeze', () => releaseAll('freeze'));
 
   document.addEventListener('visibilitychange', () => {
@@ -199,7 +206,7 @@
   });
 
   window.NeonBlockMobilePointerGuard = {
-    version: 6,
+    version: 7,
     getStatus: () => ({
       sprintPointer,
       sprintPointerType,
@@ -209,6 +216,7 @@
       fallbackPointerEvents,
       releaseErrors,
       lifecycleReleases,
+      orientationReleases,
       skippedInactiveReleases,
       lastReleaseReason,
       lastReleaseAt,

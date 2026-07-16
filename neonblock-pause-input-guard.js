@@ -18,6 +18,8 @@
   let fallbackDispatches = 0;
   let dispatchFailures = 0;
   let lifecycleReleases = 0;
+  let mobileReleases = 0;
+  let mobileReleaseFailures = 0;
   let overlayAttachAttempts = 0;
   let overlayAttachSuccesses = 0;
   let lastBlockedCode = null;
@@ -70,6 +72,20 @@
     return pending.length;
   }
 
+  function releaseMobileControls() {
+    const mobileGuard = window.NeonBlockMobilePointerGuard;
+    if (typeof mobileGuard?.releaseAll !== 'function') return false;
+
+    try {
+      const released = mobileGuard.releaseAll();
+      if (released) mobileReleases += 1;
+      return released;
+    } catch (_) {
+      mobileReleaseFailures += 1;
+      return false;
+    }
+  }
+
   function releaseForLifecycle(reason) {
     const count = releaseGameplayKeys(reason);
     if (count > 0) lifecycleReleases += 1;
@@ -96,7 +112,10 @@
 
   function syncPauseState() {
     const paused = isPaused();
-    if (paused && !lastPauseState) releaseGameplayKeys('pause-opened');
+    if (paused && !lastPauseState) {
+      releaseGameplayKeys('pause-opened');
+      releaseMobileControls();
+    }
     lastPauseState = paused;
   }
 
@@ -148,7 +167,7 @@
   }
 
   window.NeonBlockPauseInputGuard = Object.freeze({
-    version: 3,
+    version: 4,
     isPaused,
     releaseAll: () => releaseGameplayKeys('manual'),
     refreshOverlay: attachPauseOverlay,
@@ -164,6 +183,8 @@
         releases,
         releasedKeys,
         lifecycleReleases,
+        mobileReleases,
+        mobileReleaseFailures,
         fallbackDispatches,
         dispatchFailures,
         lastBlockedCode,

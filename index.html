@@ -153,7 +153,23 @@
 <script src="neonblock-lifecycle-save-polish.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW failed', e); }); });
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js', { scope: '/', updateViaCache: 'none' })
+      .then(function (registration) {
+        var update = function () {
+          registration.update().catch(function (error) {
+            console.warn('[NeonBlock City] Service worker update check failed:', error);
+          });
+        };
+        window.addEventListener('online', update);
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') update();
+        });
+      })
+      .catch(function (error) {
+        console.warn('[NeonBlock City] Service worker registration failed:', error);
+      });
+  }, { once: true });
 }
 </script>
 </body>

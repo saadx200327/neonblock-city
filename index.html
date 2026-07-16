@@ -156,10 +156,21 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('sw.js', { scope: '/', updateViaCache: 'none' })
       .then(function (registration) {
+        var updateInFlight = null;
+        var lastUpdateCheckAt = 0;
+        var updateCooldownMs = 60000;
         var update = function () {
-          registration.update().catch(function (error) {
-            console.warn('[NeonBlock City] Service worker update check failed:', error);
-          });
+          var now = Date.now();
+          if (updateInFlight || now - lastUpdateCheckAt < updateCooldownMs) return updateInFlight;
+          lastUpdateCheckAt = now;
+          updateInFlight = registration.update()
+            .catch(function (error) {
+              console.warn('[NeonBlock City] Service worker update check failed:', error);
+            })
+            .finally(function () {
+              updateInFlight = null;
+            });
+          return updateInFlight;
         };
         window.addEventListener('online', update);
         document.addEventListener('visibilitychange', function () {

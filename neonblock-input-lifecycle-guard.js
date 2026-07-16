@@ -20,6 +20,28 @@
   let lastReleaseReason = 'startup';
   let lastReleaseAt = 0;
   let drivingBrakeReleaseCount = 0;
+  let pointerCaptureFailures = 0;
+  let lastPointerCaptureFailureAt = 0;
+
+  function guardJoystickPointerCapture() {
+    const joystick = document.getElementById('joystick-container');
+    if (!joystick || typeof joystick.setPointerCapture !== 'function') return false;
+
+    const nativeSetPointerCapture = joystick.setPointerCapture.bind(joystick);
+    joystick.setPointerCapture = (pointerId) => {
+      try {
+        return nativeSetPointerCapture(pointerId);
+      } catch (error) {
+        pointerCaptureFailures += 1;
+        lastPointerCaptureFailureAt = Date.now();
+        console.warn('[NeonBlock] Joystick pointer capture was unavailable; continuing without capture.', error);
+        return undefined;
+      }
+    };
+    return true;
+  }
+
+  const joystickPointerCaptureGuarded = guardJoystickPointerCapture();
 
   function dispatchKeyRelease(code) {
     try {
@@ -72,14 +94,17 @@
   });
 
   window.NeonBlockInputLifecycleGuard = Object.freeze({
-    version: 2,
+    version: 3,
     releaseAll,
     getStatus: () => ({
-      version: 2,
+      version: 3,
       releaseCount,
       lastReleaseReason,
       lastReleaseAt,
       drivingBrakeReleaseCount,
+      joystickPointerCaptureGuarded,
+      pointerCaptureFailures,
+      lastPointerCaptureFailureAt,
       releaseCodes: [...RELEASE_CODES],
       pointerControlIds: [...POINTER_CONTROL_IDS]
     })

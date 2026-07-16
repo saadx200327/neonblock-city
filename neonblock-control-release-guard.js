@@ -34,6 +34,8 @@
   let releasing = false;
   let keyReleaseFailures = 0;
   let pointerReleaseFailures = 0;
+  let mobileGuardReleases = 0;
+  let mobileGuardReleaseFailures = 0;
   let coalescedReleases = 0;
   let lastCoalescedReason = null;
 
@@ -82,6 +84,20 @@
     }
   }
 
+  function releaseTrackedMobilePointers() {
+    const mobileGuard = window.NeonBlockMobilePointerGuard;
+    if (typeof mobileGuard?.releaseAll !== 'function') return false;
+
+    try {
+      const released = mobileGuard.releaseAll();
+      if (released) mobileGuardReleases += 1;
+      return released;
+    } catch {
+      mobileGuardReleaseFailures += 1;
+      return false;
+    }
+  }
+
   function releaseControls(reason = 'manual', options = {}) {
     if (releasing) return false;
 
@@ -96,6 +112,7 @@
     releasing = true;
     try {
       RELEASE_CODES.forEach(dispatchKeyRelease);
+      releaseTrackedMobilePointers();
       MOBILE_TARGET_IDS.forEach((id) => dispatchPointerCancel(document.getElementById(id)));
       releases += 1;
       lastReason = normalizedReason;
@@ -119,12 +136,14 @@
     window.NeonBlockControlReleaseGuard = {
       release: (reason) => releaseControls(reason, { force: true }),
       getStatus: () => ({
-        version: 3,
+        version: 4,
         releases,
         lastReason,
         lastReleasedAt,
         keyReleaseFailures,
         pointerReleaseFailures,
+        mobileGuardReleases,
+        mobileGuardReleaseFailures,
         coalescedReleases,
         lastCoalescedReason,
         releaseCoalesceMs: RELEASE_COALESCE_MS,

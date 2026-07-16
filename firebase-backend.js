@@ -26,6 +26,9 @@
   let bridgeGeneration = 0;
   let staleSessionOperations = 0;
   let isolatedSessionQueues = 0;
+  let reusedBridgeSessions = 0;
+  let activeUserUid = null;
+  let activeDb = null;
   const slotSaveQueues = new Map();
 
   const bridge = {
@@ -35,7 +38,7 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 7,
+        version: 8,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
@@ -49,6 +52,8 @@
         bridgeGeneration,
         staleSessionOperations,
         isolatedSessionQueues,
+        reusedBridgeSessions,
+        activeUserUid,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -103,6 +108,8 @@
     bridge.enabled = false;
     bridge.save = async () => false;
     bridge.load = async () => null;
+    activeUserUid = null;
+    activeDb = null;
     if (error) {
       lastError = error;
       console.warn('[NeonBlock City] Firebase bridge unavailable; local saves remain active:', error);
@@ -135,18 +142,20 @@
   }
 
   function isActiveBridgeSession(generation, user) {
-    const activeUser = getCurrentUser();
-    const activeDb = getFirestore();
-    if (generation !== bridgeGeneration || !activeUser || !activeDb || activeUser.uid !== user.uid) {
+    const currentUser = getCurrentUser();
+    const currentDb = getFirestore();
+    if (generation !== bridgeGeneration || !currentUser || !currentDb || currentUser.uid !== user.uid) {
       staleSessionOperations += 1;
       return null;
     }
-    return { user: activeUser, db: activeDb };
+    return { user: currentUser, db: currentDb };
   }
 
   function configureBridge(user, db) {
     const generation = ++bridgeGeneration;
     bridge.enabled = true;
+    activeUserUid = user.uid;
+    activeDb = db;
     lastError = null;
     lastEnabledAt = Date.now();
 
@@ -247,6 +256,15 @@
       }
       if (!user.uid || typeof user.uid !== 'string') {
         throw new TypeError('Firebase user is missing a valid uid.');
+      }
+      if (bridge.enabled && activeUserUid === user.uid && activeDb === db) {
+        reusedBridgeSessions += 1;
+        retryCount = 0;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = 0;
+        }
+        return true;
       }
       configureBridge(user, db);
       retryCount = 0;

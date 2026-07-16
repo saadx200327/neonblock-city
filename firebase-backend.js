@@ -25,6 +25,7 @@
   let payloadSnapshotFailures = 0;
   let bridgeGeneration = 0;
   let staleSessionOperations = 0;
+  let isolatedSessionQueues = 0;
   const slotSaveQueues = new Map();
 
   const bridge = {
@@ -34,7 +35,7 @@
     refresh: tryEnable,
     getStatus() {
       return {
-        version: 6,
+        version: 7,
         enabled: bridge.enabled,
         authenticated: Boolean(getCurrentUser()),
         firebaseAvailable: Boolean(getFirestore()),
@@ -47,6 +48,7 @@
         payloadSnapshotFailures,
         bridgeGeneration,
         staleSessionOperations,
+        isolatedSessionQueues,
         lastEnabledAt,
         lastSaveAt,
         lastLoadAt,
@@ -107,18 +109,23 @@
     }
   }
 
-  function queueSlotSave(slot, task) {
-    const previous = slotSaveQueues.get(slot) || Promise.resolve();
+  function getSessionQueueKey(generation, user, slot) {
+    isolatedSessionQueues += 1;
+    return `${generation}:${user.uid}:${slot}`;
+  }
+
+  function queueSlotSave(queueKey, task) {
+    const previous = slotSaveQueues.get(queueKey) || Promise.resolve();
     const queued = previous.catch(() => false).then(task);
-    slotSaveQueues.set(slot, queued);
+    slotSaveQueues.set(queueKey, queued);
     queuedSaveCount += 1;
     return queued.finally(() => {
-      if (slotSaveQueues.get(slot) === queued) slotSaveQueues.delete(slot);
+      if (slotSaveQueues.get(queueKey) === queued) slotSaveQueues.delete(queueKey);
     });
   }
 
-  async function waitForSlotSave(slot) {
-    const pending = slotSaveQueues.get(slot);
+  async function waitForSlotSave(queueKey) {
+    const pending = slotSaveQueues.get(queueKey);
     if (!pending) return;
     try {
       await pending;
@@ -147,7 +154,8 @@
       try {
         const safeSlot = normalizeSlot(slot);
         const safeData = snapshotPayload(data);
-        return await queueSlotSave(safeSlot, async () => {
+        const queueKey = getSessionQueueKey(generation, user, safeSlot);
+        return await queueSlotSave(queueKey, async () => {
           const session = isActiveBridgeSession(generation, user);
           if (!session) return false;
 
@@ -175,7 +183,8 @@
     bridge.load = async (slot) => {
       try {
         const safeSlot = normalizeSlot(slot);
-        await waitForSlotSave(safeSlot);
+        const queueKey = getSessionQueueKey(generation, user, safeSlot);
+        await waitForSlotSave(queueKey);
 
         const session = isActiveBridgeSession(generation, user);
         if (!session) return null;

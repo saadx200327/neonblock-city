@@ -38,6 +38,8 @@
   let mobileGuardReleaseFailures = 0;
   let coalescedReleases = 0;
   let lastCoalescedReason = null;
+  let hadPointerLock = Boolean(document.pointerLockElement);
+  let pointerLockReleases = 0;
 
   function dispatchKeyRelease(code) {
     const init = {
@@ -127,16 +129,25 @@
     if (document.hidden) releaseControls('document-hidden');
   }
 
+  function onPointerLockChange() {
+    const hasPointerLock = Boolean(document.pointerLockElement);
+    if (hadPointerLock && !hasPointerLock) {
+      if (releaseControls('pointer-lock-lost')) pointerLockReleases += 1;
+    }
+    hadPointerLock = hasPointerLock;
+  }
+
   function boot() {
     window.addEventListener('blur', () => releaseControls('window-blur'));
     window.addEventListener('pagehide', () => releaseControls('pagehide'));
     document.addEventListener('visibilitychange', onVisibilityChange);
     document.addEventListener('freeze', () => releaseControls('document-freeze'));
+    document.addEventListener('pointerlockchange', onPointerLockChange);
 
     window.NeonBlockControlReleaseGuard = {
       release: (reason) => releaseControls(reason, { force: true }),
       getStatus: () => ({
-        version: 4,
+        version: 5,
         releases,
         lastReason,
         lastReleasedAt,
@@ -146,6 +157,8 @@
         mobileGuardReleaseFailures,
         coalescedReleases,
         lastCoalescedReason,
+        pointerLockReleases,
+        pointerLocked: Boolean(document.pointerLockElement),
         releaseCoalesceMs: RELEASE_COALESCE_MS,
         hidden: document.hidden,
         focused: document.hasFocus()

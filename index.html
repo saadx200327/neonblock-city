@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <title>NeonBlock City</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="description" content="NeonBlock City is a static neon block city browser game with missions, vehicles, ownership, local saves, optional cloud saves, and PWA support.">
 <meta name="theme-color" content="#0c1020">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<noscript>NeonBlock City needs JavaScript enabled to play.</noscript>
 <div id="loading-screen"><div class="loading-title">NeonBlock City</div><div class="loading-sub">Streaming world...</div></div>
-<canvas id="game-canvas"></canvas>
+<canvas id="game-canvas" aria-label="NeonBlock City game canvas"></canvas>
 <div id="hud">
 <div id="hud-top-left">
 <div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
@@ -25,7 +28,7 @@
 <div class="hud-row"><span class="hud-label">Gas</span><span id="hud-vehicle-gas">100</span></div>
 <div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
 </div>
-<div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
+<div id="minimap"><canvas id="minimap-canvas" width="160" height="160" aria-label="Minimap"></canvas></div>
 <div id="waypoint-arrow">^</div>
 <div id="debug-overlay">
 <div>FPS: <span id="debug-fps">0</span></div>
@@ -42,6 +45,7 @@
 <div class="menu-card">
 <h2>Pause</h2>
 <button id="btn-resume">Resume</button>
+<button id="btn-missions">Missions</button>
 <button id="btn-settings">Settings</button>
 <button id="btn-save">Save Game</button>
 <button id="btn-load">Load Game</button>
@@ -73,13 +77,110 @@
 <button class="action-btn" id="btn-mobile-pause">Pause</button>
 </div>
 </div>
-<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+<script src="vendor/three-0.158.0.min.js"></script>
 <script type="module" src="firebase-backend.js"></script>
+<script src="neonblock-runtime-guard.js"></script>
+<script src="neonblock-action-edge-guard.js"></script>
+<script src="neonblock-input-lifecycle-guard.js"></script>
+<script src="neonblock-webgl-recovery-polish.js"></script>
+<script src="neonblock-frame-lifecycle-guard.js"></script>
+<script src="neonblock-viewport-recovery-polish.js"></script>
+<script src="neonblock-startup-recovery-polish.js"></script>
+<script src="neonblock-editable-input-guard.js"></script>
+<script src="neonblock-pause-input-guard.js"></script>
 <script src="app.js"></script>
+<script src="neonblock-control-release-guard.js"></script>
+<script src="neonblock-mobile-pointer-guard.js"></script>
+<script src="neonblock-touch-context-guard.js"></script>
+<script src="neonblock-hardening.js"></script>
+<script src="neonblock-input-polish.js"></script>
+<script src="neonblock-economy-polish.js"></script>
+<script src="neonblock-session-polish.js"></script>
+<script src="neonblock-accessibility-polish.js"></script>
+<script src="neonblock-camera-polish.js"></script>
+<script src="neonblock-objective-polish.js"></script>
+<script src="neonblock-feedback-polish.js"></script>
+<script src="neonblock-wayfinding-polish.js"></script>
+<script src="neonblock-mobile-shell-polish.js"></script>
+<script src="neonblock-qa-polish.js"></script>
+<script src="neonblock-driving-polish.js"></script>
+<script src="neonblock-mission-polish.js"></script>
+<script src="neonblock-mobile-mission-control.js"></script>
+<script src="neonblock-property-polish.js"></script>
+<script src="neonblock-property-slot-polish.js"></script>
+<script src="neonblock-performance-polish.js"></script>
+<script src="neonblock-progression-polish.js"></script>
+<script src="neonblock-world-safety-polish.js"></script>
+<script src="neonblock-pwa-polish.js"></script>
+<script src="neonblock-pwa-lifecycle-guard.js"></script>
+<script src="neonblock-cloud-polish.js"></script>
+<script src="neonblock-onboarding-polish.js"></script>
+<script src="neonblock-garage-polish.js"></script>
+<script src="neonblock-garage-data-guard.js"></script>
+<script src="neonblock-controls-coach-polish.js"></script>
+<script src="neonblock-city-pulse-polish.js"></script>
+<script src="neonblock-hosting-polish.js"></script>
+<script src="neonblock-roadside-polish.js"></script>
+<script src="neonblock-save-doctor-polish.js"></script>
+<script src="neonblock-map-polish.js"></script>
+<script src="neonblock-district-polish.js"></script>
+<script src="neonblock-questlog-polish.js"></script>
+<script src="neonblock-vehicle-health-polish.js"></script>
+<script src="neonblock-vehicle-health-lifecycle-guard.js"></script>
+<script src="neonblock-emergency-kit-polish.js"></script>
+<script src="neonblock-checkpoint-polish.js"></script>
+<script src="neonblock-civic-polish.js"></script>
+<script src="neonblock-sidejobs-polish.js"></script>
+<script src="neonblock-inventory-polish.js"></script>
+<script src="neonblock-banking-polish.js"></script>
+<script src="neonblock-profile-polish.js"></script>
+<script src="neonblock-city-events-polish.js"></script>
+<script src="neonblock-transit-polish.js"></script>
+<script src="neonblock-delivery-board-polish.js"></script>
+<script src="neonblock-race-polish.js"></script>
+<script src="neonblock-play-settings-polish.js"></script>
+<script src="neonblock-streak-polish.js"></script>
+<script src="neonblock-route-challenges-polish.js"></script>
+<script src="neonblock-daily-bonus-polish.js"></script>
+<script src="neonblock-ride-finder-polish.js"></script>
+<script src="neonblock-property-finder-polish.js"></script>
+<script src="neonblock-crate-finder-polish.js"></script>
+<script src="neonblock-mobile-actions-polish.js"></script>
+<script src="neonblock-mobile-viewport-guard.js"></script>
+<script src="neonblock-save-resilience-polish.js"></script>
+<script src="neonblock-load-motion-guard.js"></script>
+<script src="neonblock-vehicle-restore-polish.js"></script>
+<script src="neonblock-lifecycle-save-polish.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW failed', e); }); });
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js', { scope: '/', updateViaCache: 'none' })
+      .then(function (registration) {
+        var updateInFlight = null;
+        var lastUpdateCheckAt = 0;
+        var updateCooldownMs = 60000;
+        var update = function () {
+          var now = Date.now();
+          if (updateInFlight || now - lastUpdateCheckAt < updateCooldownMs) return updateInFlight;
+          lastUpdateCheckAt = now;
+          updateInFlight = registration.update()
+            .catch(function (error) {
+              console.warn('[NeonBlock City] Service worker update check failed:', error);
+            })
+            .finally(function () {
+              updateInFlight = null;
+            });
+          return updateInFlight;
+        };
+        window.addEventListener('online', update);
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') update();
+        });
+      })
+      .catch(function (error) {
+        console.warn('[NeonBlock City] Service worker registration failed:', error);
+      });
+  }, { once: true });
 }
 </script>
 </body>

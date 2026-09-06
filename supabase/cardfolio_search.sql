@@ -33,4 +33,5 @@ as $$
 $$;
 
 revoke all on function public.search_my_holdings(text, integer) from public;
+revoke execute on function public.search_my_holdings(text, integer) from anon;
 grant execute on function public.search_my_holdings(text, integer) to authenticated;

@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-sw.js; do
+          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-runtime-hardening.js cardfolio-sw.js; do
             test -f "$file"
             node --check "$file"
           done
@@ -54,12 +54,14 @@ jobs:
           grep -Fq 'cardfolio-liquid.css' index.html
           grep -Fq 'cardfolio-product.js' index.html
           grep -Fq 'cardfolio-product-fixes.js' index.html
+          grep -Fq 'cardfolio-runtime-hardening.js' index.html
           grep -Fq 'cardfolio-sw.js' cardfolio-app.js
           grep -Fq 'cardfolio-vnext.css' cardfolio-sw.js
           grep -Fq 'cardfolio-vnext.js' cardfolio-sw.js
           grep -Fq 'cardfolio-liquid.css' cardfolio-sw.js
           grep -Fq 'cardfolio-product.js' cardfolio-sw.js
           grep -Fq 'cardfolio-product-fixes.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-runtime-hardening.js' cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
       - name: Validate Netlify production configuration
@@ -76,6 +78,7 @@ jobs:
           grep -Fq 'cardfolio-liquid.css' netlify.toml
           grep -Fq 'cardfolio-product.js' netlify.toml
           grep -Fq 'cardfolio-product-fixes.js' netlify.toml
+          grep -Fq 'cardfolio-runtime-hardening.js' netlify.toml
           grep -Fq 'cardfolio-scan-review.js' netlify.toml
           grep -Fq 'for = "/cardfolio-sw.js"' netlify.toml
           grep -Fq 'for = "/cardfolio-manifest.webmanifest"' netlify.toml
@@ -91,12 +94,13 @@ jobs:
           set -euo pipefail
           rm -rf dist
           mkdir -p dist
-          cp index.html cardfolio.css cardfolio-vnext.css cardfolio-liquid.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
+          cp index.html cardfolio.css cardfolio-vnext.css cardfolio-liquid.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-runtime-hardening.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
           test -f dist/index.html
           test -f dist/cardfolio-vnext.js
           test -f dist/cardfolio-vnext.css
           test -f dist/cardfolio-product.js
           test -f dist/cardfolio-product-fixes.js
+          test -f dist/cardfolio-runtime-hardening.js
           test -f dist/cardfolio-liquid.css
           test -f dist/cardfolio-sw.js
           test ! -e dist/supabase
@@ -178,3 +182,5 @@ jobs:
           grep -Fq 'card_market_observations' cardfolio-product.js
           grep -Fq 'force' cardfolio-product-fixes.js
           grep -Fq 'canonical re-resolution' cardfolio-product-fixes.js
+          grep -Fq 'resolve_canonical_card' cardfolio-runtime-hardening.js
+          grep -Fq 'BarcodeDetector' cardfolio-runtime-hardening.js

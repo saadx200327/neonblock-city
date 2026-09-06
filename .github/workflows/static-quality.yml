@@ -136,6 +136,10 @@ jobs:
           test -f supabase/cardfolio_canonical_market.sql
           test -f supabase/cardfolio_market_v2.sql
           test -f supabase/cardfolio_market_v2_hardening.sql
+          test -f supabase/cardfolio_market_pricing_engine.sql
+          test -f supabase/cardfolio_research_commit_pipeline.sql
+          test -f supabase/cardfolio_real_historical_sales_series.sql
+          test -f supabase/cardfolio_shared_market_readonly_grants.sql
           grep -Fq 'alter table public.card_holdings enable row level security' supabase/cardfolio_schema.sql
           grep -Fq 'holdings_select_own' supabase/cardfolio_schema.sql
           grep -Fq 'watchlist_select_own' supabase/cardfolio_schema.sql
@@ -155,6 +159,14 @@ jobs:
           grep -Fq 'private.resolve_canonical_card_internal' supabase/cardfolio_market_v2_hardening.sql
           grep -Fq 'security invoker' supabase/cardfolio_market_v2_hardening.sql
           grep -Fq 'card_variant_catalog_canonical_card_idx' supabase/cardfolio_market_v2_hardening.sql
+          grep -Fq 'private.reprice_card_from_observations' supabase/cardfolio_market_pricing_engine.sql
+          grep -Fq "source_kind='sold'" supabase/cardfolio_market_pricing_engine.sql
+          grep -Fq '10% trimmed mean' supabase/cardfolio_market_pricing_engine.sql
+          grep -Fq 'observation_fingerprint' supabase/cardfolio_research_commit_pipeline.sql
+          grep -Fq 'cardfolio_commit_research_result' supabase/cardfolio_research_commit_pipeline.sql
+          grep -Fq 'rebuild_card_history_from_sales' supabase/cardfolio_real_historical_sales_series.sql
+          grep -Fq "series_kind in ('valuation','sold_bucket')" supabase/cardfolio_real_historical_sales_series.sql
+          grep -Fq 'revoke all privileges on table public.canonical_cards' supabase/cardfolio_shared_market_readonly_grants.sql
 
       - name: Prevent privileged Supabase keys in browser files
         shell: bash

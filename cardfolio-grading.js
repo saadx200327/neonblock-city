@@ -28,6 +28,11 @@ gradingView=function(){
   return `<section class="panel"><div class="section-head"><div><h2>Grading hub</h2><div class="holding-meta">Cardfolio stores your grader, grade and cert. Authenticity is verified on the grader's own database.</div></div></div><div class="grading-grid">${graders.map(([name,verify,submit,desc])=>`<article class="grader-card tip"><div class="market-logo">◇</div><h3>${escapeHtml(name)}</h3><p class="muted">${escapeHtml(desc)}.</p><div class="grading-actions"><a class="btn primary" href="${verify}" target="_blank" rel="noopener noreferrer">Verify cert ↗</a><a class="btn secondary" href="${submit}" target="_blank" rel="noopener noreferrer">Submit ↗</a></div></article>`).join('')}</div><div class="tip" style="margin-top:16px"><strong>Verification ≠ guaranteed authenticity</strong><p class="holding-meta">A valid certification number confirms a record exists in the grader's database. Always compare the physical holder, label and images when available.</p></div></section><section class="panel" style="margin-top:16px"><div class="section-head"><h2>Your graded cards</h2><span class="source-tag">${state.holdings.filter(h=>h.grading_company).length} slabs</span></div>${gradedHoldingList()}</section>`;
 };
 
+const gradingBaseMarketView=marketView;
+marketView=function(){
+  return `${gradingBaseMarketView()}<section class="panel" style="margin-top:16px"><div class="section-head"><div><h2>Grading & authentication</h2><div class="holding-meta">Submit cards and verify existing slabs through the grader's official database.</div></div><button class="btn secondary" data-view="grading">Open grading hub</button></div></section>`;
+};
+
 const gradingBaseBindViewEvents=bindViewEvents;
 bindViewEvents=function(){
   gradingBaseBindViewEvents();

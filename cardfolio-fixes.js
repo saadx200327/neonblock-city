@@ -122,7 +122,7 @@ async function initBackend(){
   }catch{}
   try{
     state.config=cfg;if(!cfg.configured) throw new Error('not configured');
-    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const {createClient}=await import(SUPABASE_BROWSER_MODULE);
     state.supabase=createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
     const {data:{session}}=await state.supabase.auth.getSession();state.user=session?.user||null;
     state.backend='cloud';$('#backendBadge').textContent='Supabase cloud';$('#backendBadge').className='status-pill good';

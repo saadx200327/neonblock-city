@@ -15,6 +15,7 @@
   <script defer src="/cardfolio-app-3.js"></script>
   <script defer src="/cardfolio-app-4.js"></script>
   <script defer src="/cardfolio-fixes.js"></script>
+  <script defer src="/cardfolio-watchlist.js"></script>
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -27,6 +28,7 @@
         <button data-view="home" class="nav-item active"><span>⌂</span><span>Home</span></button>
         <button data-view="portfolio" class="nav-item"><span>▦</span><span>Portfolio</span></button>
         <button data-view="scan" class="nav-item"><span>◎</span><span>Scan</span></button>
+        <button data-view="watchlist" class="nav-item"><span>☆</span><span>Watchlist</span></button>
         <button data-view="market" class="nav-item"><span>↗</span><span>Market</span></button>
         <button data-view="grading" class="nav-item"><span>◇</span><span>Grading</span></button>
       </nav>
@@ -46,14 +48,14 @@
       <button data-view="home" class="active"><span>⌂</span><small>Home</small></button>
       <button data-view="portfolio"><span>▦</span><small>Portfolio</small></button>
       <button data-view="scan" class="scan-tab"><span>◎</span><small>Scan</small></button>
+      <button data-view="watchlist"><span>☆</span><small>Watch</small></button>
       <button data-view="market"><span>↗</span><small>Market</small></button>
-      <button data-view="profile"><span>○</span><small>Profile</small></button>
     </nav>
   </div>
   <dialog id="authDialog" class="modal">
     <form method="dialog" class="modal-card" id="authForm">
       <div class="modal-head"><div><div class="eyebrow">Cloud sync</div><h2>Sign in to Cardfolio</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
-      <p id="authExplainer" class="muted">Cloud authentication activates after the Cardfolio Supabase project is configured. Local Vault remains fully usable without an account.</p>
+      <p id="authExplainer" class="muted">Use a Cardfolio account to keep your private portfolio and watchlist synced across devices. Local Vault remains available without signing in.</p>
       <label>Email<input id="authEmail" type="email" autocomplete="email" required /></label>
       <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required /></label>
       <div class="button-row"><button type="button" id="loginBtn" class="btn primary">Sign in</button><button type="button" id="signupBtn" class="btn secondary">Create account</button></div>

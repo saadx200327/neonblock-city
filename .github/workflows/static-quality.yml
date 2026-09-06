@@ -59,7 +59,7 @@ jobs:
           test -f netlify.toml
           test -f netlify/functions/config.mts
           test -f netlify/functions/ebay.mts
-          grep -Fq 'publish = "."' netlify.toml
+          grep -Fq 'publish = "dist"' netlify.toml
           grep -Fq 'directory = "netlify/functions"' netlify.toml
           grep -Fq 'for = "/cardfolio-sw.js"' netlify.toml
           grep -Fq 'for = "/cardfolio-manifest.webmanifest"' netlify.toml
@@ -68,6 +68,19 @@ jobs:
           grep -Fq "path: '/api/ebay'" netlify/functions/ebay.mts
           node --experimental-strip-types netlify/functions/config.mts
           node --experimental-strip-types netlify/functions/ebay.mts
+
+      - name: Build exact Netlify publish directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+          cp index.html cardfolio.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
+          test -f dist/index.html
+          test -f dist/cardfolio-sw.js
+          test ! -e dist/supabase
+          test ! -e dist/api
+          test ! -e dist/.github
 
       - name: Enforce reproducible browser dependencies
         shell: bash

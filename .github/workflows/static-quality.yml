@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-sw.js; do
+          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-sw.js; do
             test -f "$file"
             node --check "$file"
           done
@@ -38,6 +38,7 @@ jobs:
           set -euo pipefail
           test -f index.html
           test -f cardfolio.css
+          test -f cardfolio-vnext.css
           test -f cardfolio-manifest.webmanifest
           test -f cardfolio-icon.svg
           grep -Fq 'cardfolio-manifest.webmanifest' index.html
@@ -46,10 +47,12 @@ jobs:
           grep -Fq 'cardfolio-watchlist.js' index.html
           grep -Fq 'cardfolio-grading.js' index.html
           grep -Fq 'cardfolio-valuation-integrity.js' index.html
+          grep -Fq 'cardfolio-scan-review.js' index.html
+          grep -Fq 'cardfolio-vnext.css' index.html
+          grep -Fq 'cardfolio-vnext.js' index.html
           grep -Fq 'cardfolio-sw.js' cardfolio-app.js
-          grep -Fq 'cardfolio-watchlist.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-grading.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-valuation-integrity.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-vnext.css' cardfolio-sw.js
+          grep -Fq 'cardfolio-vnext.js' cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
       - name: Validate Netlify production configuration
@@ -61,6 +64,9 @@ jobs:
           test -f netlify/functions/ebay.mts
           grep -Fq 'publish = "dist"' netlify.toml
           grep -Fq 'directory = "netlify/functions"' netlify.toml
+          grep -Fq 'cardfolio-vnext.css' netlify.toml
+          grep -Fq 'cardfolio-vnext.js' netlify.toml
+          grep -Fq 'cardfolio-scan-review.js' netlify.toml
           grep -Fq 'for = "/cardfolio-sw.js"' netlify.toml
           grep -Fq 'for = "/cardfolio-manifest.webmanifest"' netlify.toml
           grep -Fq 'Permissions-Policy = "camera=(self), microphone=(), geolocation=()"' netlify.toml
@@ -75,8 +81,10 @@ jobs:
           set -euo pipefail
           rm -rf dist
           mkdir -p dist
-          cp index.html cardfolio.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
+          cp index.html cardfolio.css cardfolio-vnext.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
           test -f dist/index.html
+          test -f dist/cardfolio-vnext.js
+          test -f dist/cardfolio-vnext.css
           test -f dist/cardfolio-sw.js
           test ! -e dist/supabase
           test ! -e dist/api
@@ -108,6 +116,7 @@ jobs:
           test -f supabase/cardfolio_search.sql
           test -f supabase/cardfolio_private_provider_status.sql
           test -f supabase/cardfolio_atomic_valuation.sql
+          test -f supabase/cardfolio_canonical_market.sql
           grep -Fq 'alter table public.card_holdings enable row level security' supabase/cardfolio_schema.sql
           grep -Fq 'holdings_select_own' supabase/cardfolio_schema.sql
           grep -Fq 'watchlist_select_own' supabase/cardfolio_schema.sql
@@ -117,18 +126,20 @@ jobs:
           grep -Fq 'alter table public.provider_status set schema private' supabase/cardfolio_private_provider_status.sql
           grep -Fq 'security invoker' supabase/cardfolio_atomic_valuation.sql
           grep -Fq 'set_holding_valuation' supabase/cardfolio_atomic_valuation.sql
-          grep -Fq 'from anon' supabase/cardfolio_atomic_valuation.sql
+          grep -Fq 'canonical_cards' supabase/cardfolio_canonical_market.sql
+          grep -Fq 'resolve_canonical_card' supabase/cardfolio_canonical_market.sql
+          grep -Fq 'cardfolio_propagate_canonical_price' supabase/cardfolio_canonical_market.sql
 
       - name: Prevent privileged Supabase keys in browser files
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Ein 'service[_-]?role|SUPABASE_SERVICE_ROLE' index.html cardfolio-*.js cardfolio.css cardfolio-manifest.webmanifest; then
+          if grep -Ein 'service[_-]?role|SUPABASE_SERVICE_ROLE' index.html cardfolio-*.js cardfolio*.css cardfolio-manifest.webmanifest; then
             echo 'Privileged Supabase credential reference found in browser-delivered files.' >&2
             exit 1
           fi
 
-      - name: Enforce honest market-language invariants
+      - name: Enforce market-integrity invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -137,3 +148,6 @@ jobs:
           grep -Fq 'does not scrape closed marketplaces' cardfolio-fixes.js
           grep -Fq 'never counted in portfolio value' cardfolio-watchlist.js
           grep -Fq 'Verification ≠ guaranteed authenticity' cardfolio-grading.js
+          grep -Fq 'Pending Price' cardfolio-vnext.js
+          grep -Fq 'No synthetic backfill' cardfolio-vnext.js
+          grep -Fq 'exact-card market records' cardfolio-vnext.js

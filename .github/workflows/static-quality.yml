@@ -1,16 +1,17 @@
-name: Static game quality
+name: Cardfolio quality gate
 
 on:
   pull_request:
   push:
     branches:
+      - cardfolio-mvp
       - main
 
 permissions:
   contents: read
 
 jobs:
-  validate-static-game:
+  validate-cardfolio:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -22,27 +23,53 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate JavaScript syntax
+      - name: Validate browser JavaScript syntax
         shell: bash
         run: |
           set -euo pipefail
-          find . -maxdepth 1 -type f -name '*.js' -print0 \
-            | sort -z \
-            | xargs -0 -r -n1 node --check
+          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-sw.js; do
+            test -f "$file"
+            node --check "$file"
+          done
 
-      - name: Validate PWA and static-hosting files
+      - name: Validate Cardfolio PWA shell
         shell: bash
         run: |
           set -euo pipefail
           test -f index.html
-          test -f manifest.webmanifest
-          test -f sw.js
-          test -f netlify.toml
-          grep -Fq 'manifest.webmanifest' index.html
-          grep -Fq 'sw.js' index.html
-          grep -Fq '"start_url"' manifest.webmanifest
-          grep -Fq '"display"' manifest.webmanifest
-          grep -Fq '[build]' netlify.toml
+          test -f cardfolio.css
+          test -f cardfolio-manifest.webmanifest
+          test -f cardfolio-icon.svg
+          grep -Fq 'cardfolio-manifest.webmanifest' index.html
+          grep -Fq 'cardfolio-app.js' index.html
+          grep -Fq 'cardfolio-fixes.js' index.html
+          grep -Fq 'cardfolio-sw.js' cardfolio-app.js
+          node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
-      - name: Validate manifest JSON
-        run: node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest', 'utf8'))"
+      - name: Validate backend and database assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f api/config.js
+          test -f api/ebay.js
+          test -f supabase/cardfolio_schema.sql
+          grep -Fq 'alter table public.card_holdings enable row level security' supabase/cardfolio_schema.sql
+          grep -Fq 'holdings_select_own' supabase/cardfolio_schema.sql
+          grep -Fq "public = false" supabase/cardfolio_schema.sql
+
+      - name: Prevent privileged Supabase keys in browser files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Ein 'service[_-]?role|SUPABASE_SERVICE_ROLE' index.html cardfolio-*.js cardfolio.css cardfolio-manifest.webmanifest; then
+            echo 'Privileged Supabase credential reference found in browser-delivered files.' >&2
+            exit 1
+          fi
+
+      - name: Enforce honest market-language invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Active listings only' cardfolio-app-4.js
+          grep -Fq 'not a sold comp' cardfolio-app-4.js
+          grep -Fq 'does not scrape closed marketplaces' cardfolio-fixes.js

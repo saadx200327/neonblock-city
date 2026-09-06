@@ -49,17 +49,14 @@ async function migrateLocalToCloud(){
     const localHoldings=Array.isArray(local.holdings)?local.holdings.filter(h=>h&&h.id&&h.subject):[];
     const localSnapshots=Array.isArray(local.snapshots)?local.snapshots.filter(s=>s&&s.id&&s.holding_id):[];
     if(!localHoldings.length&&!localSnapshots.length) return;
-
     const [{data:remoteH,error:holdingsReadError},{data:remoteS,error:snapshotsReadError}]=await Promise.all([
       state.supabase.from('card_holdings').select('id'),
       state.supabase.from('price_snapshots').select('id')
     ]);
     if(holdingsReadError||snapshotsReadError) throw new Error('Could not inspect cloud vault before migration');
-
     const cloudHoldingIds=new Set((remoteH||[]).map(x=>x.id));
     const cloudSnapshotIds=new Set((remoteS||[]).map(x=>x.id));
     let migratedHoldings=0,migratedSnapshots=0;
-
     for(const localHolding of localHoldings){
       if(cloudHoldingIds.has(localHolding.id)) continue;
       const row={...localHolding};
@@ -74,14 +71,12 @@ async function migrateLocalToCloud(){
       const {error}=await state.supabase.from('card_holdings').insert(toDb(row));
       if(!error){cloudHoldingIds.add(localHolding.id);migratedHoldings++;}
     }
-
     for(const localSnapshot of localSnapshots){
       if(cloudSnapshotIds.has(localSnapshot.id)||!cloudHoldingIds.has(localSnapshot.holding_id)) continue;
       const snapshot={...localSnapshot,user_id:state.user.id};
       const {error}=await state.supabase.from('price_snapshots').insert(snapshot);
       if(!error){cloudSnapshotIds.add(localSnapshot.id);migratedSnapshots++;}
     }
-
     if(migratedHoldings||migratedSnapshots) toast(`Cloud backup added · ${migratedHoldings} cards${migratedSnapshots?` · ${migratedSnapshots} prices`:''}`);
   })().catch(err=>{console.warn('Cardfolio local migration failed',err);toast('Local cards are still safe on this device; cloud migration will retry.');}).finally(()=>{cardfolioMigrationPromise=null;});
   return cardfolioMigrationPromise;
@@ -144,3 +139,6 @@ renderMarketFor=async function(h){
   ebayRow.insertAdjacentHTML('afterend',`${primaryHtml}${secondaryHtml}`);
   $('#copyMarketQuery')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(q);toast('Card search copied')}catch{toast(q)}});
 };
+
+/* Keep dense market links visually separated instead of bunched together. */
+(()=>{if(document.getElementById('cardfolio-fix-styles'))return;const style=document.createElement('style');style.id='cardfolio-fix-styles';style.textContent='.market-link-group{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.market-link-group .button-row{flex-wrap:wrap}.market-link-group .btn{white-space:nowrap}@media(max-width:720px){.market-link-group .button-row{display:grid;grid-template-columns:1fr 1fr}.market-link-group .btn{width:100%;text-align:center;white-space:normal}}';document.head.appendChild(style)})();

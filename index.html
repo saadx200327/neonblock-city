@@ -11,6 +11,9 @@
   <link rel="stylesheet" href="/cardfolio.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script defer src="/cardfolio-app.js"></script>
+  <script defer src="/cardfolio-app-2.js"></script>
+  <script defer src="/cardfolio-app-3.js"></script>
+  <script defer src="/cardfolio-app-4.js"></script>
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -31,21 +34,13 @@
         <button data-view="profile" class="nav-item"><span>○</span><span>Profile</span></button>
       </div>
     </aside>
-
     <main class="main">
       <header class="topbar">
-        <div>
-          <div class="eyebrow" id="viewEyebrow">Portfolio intelligence</div>
-          <h1 id="viewTitle">Home</h1>
-        </div>
-        <div class="top-actions">
-          <button id="quickAdd" class="btn secondary">Manual add</button>
-          <button id="authButton" class="btn primary">Sign in</button>
-        </div>
+        <div><div class="eyebrow" id="viewEyebrow">Portfolio intelligence</div><h1 id="viewTitle">Home</h1></div>
+        <div class="top-actions"><button id="quickAdd" class="btn secondary">Manual add</button><button id="authButton" class="btn primary">Sign in</button></div>
       </header>
       <section id="content" class="content" tabindex="-1"></section>
     </main>
-
     <nav class="mobile-nav" aria-label="Mobile navigation">
       <button data-view="home" class="active"><span>⌂</span><small>Home</small></button>
       <button data-view="portfolio"><span>▦</span><small>Portfolio</small></button>
@@ -54,7 +49,6 @@
       <button data-view="profile"><span>○</span><small>Profile</small></button>
     </nav>
   </div>
-
   <dialog id="authDialog" class="modal">
     <form method="dialog" class="modal-card" id="authForm">
       <div class="modal-head"><div><div class="eyebrow">Cloud sync</div><h2>Sign in to Cardfolio</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
@@ -65,7 +59,6 @@
       <div id="authState" class="inline-note"></div>
     </form>
   </dialog>
-
   <dialog id="cardDialog" class="modal wide">
     <form method="dialog" class="modal-card" id="cardForm">
       <div class="modal-head"><div><div class="eyebrow">Holding</div><h2 id="cardDialogTitle">Add card</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
@@ -92,16 +85,11 @@
         <label>Grade<input id="grade" maxlength="20" placeholder="10, 9.5…" /></label>
         <label>Certification #<input id="certNumber" maxlength="80" /></label>
       </div>
-      <div class="flag-row">
-        <label><input id="rookie" type="checkbox" /> Rookie / RC</label>
-        <label><input id="autograph" type="checkbox" /> Autograph</label>
-        <label><input id="relic" type="checkbox" /> Relic / memorabilia</label>
-      </div>
+      <div class="flag-row"><label><input id="rookie" type="checkbox" /> Rookie / RC</label><label><input id="autograph" type="checkbox" /> Autograph</label><label><input id="relic" type="checkbox" /> Relic / memorabilia</label></div>
       <label>Notes<textarea id="notes" rows="3" maxlength="1000"></textarea></label>
       <div class="button-row spread"><button type="button" id="deleteCardBtn" class="btn danger hidden">Delete</button><div class="button-row"><button value="cancel" class="btn secondary">Cancel</button><button type="button" id="saveCardBtn" class="btn primary">Save holding</button></div></div>
     </form>
   </dialog>
-
   <dialog id="scanReviewDialog" class="modal wide">
     <div class="modal-card">
       <div class="modal-head"><div><div class="eyebrow">Review before add</div><h2>Confirm scan</h2></div><button class="icon-btn" id="closeScanReview" aria-label="Close">×</button></div>

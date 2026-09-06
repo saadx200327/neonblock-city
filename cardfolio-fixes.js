@@ -109,3 +109,38 @@ async function initBackend(){
   }
   updateAuthButton();
 }
+
+/* Verified market routing: native API where available, honest outbound links everywhere else. */
+function primaryMarketLinks(h){
+  const maker=`${h.manufacturer||''} ${h.brand||''}`.toUpperCase();
+  const links=[];
+  if(h.category==='Pokémon'||maker.includes('POKEMON')||maker.includes('POKÉMON')) links.push(['Pokémon Center','https://www.pokemoncenter.com/']);
+  if(maker.includes('TOPPS')||maker.includes('BOWMAN')) links.push(['Topps official','https://www.topps.com/collections/cards']);
+  if(['PANINI','PRIZM','SELECT','MOSAIC','OPTIC','DONRUSS'].some(x=>maker.includes(x))) links.push(['Panini official','https://www.paniniamerica.net/cards']);
+  if(maker.includes('UPPER DECK')||maker.includes('FLEER')) links.push(['Upper Deck official','https://upperdeckstore.com/']);
+  return links;
+}
+function secondaryMarketLinks(){
+  return [
+    ['Fanatics Collect','https://www.fanaticscollect.com/marketplace'],
+    ['Fanatics sold history','https://sales-history.fanaticscollect.com/'],
+    ['Mercari sports cards','https://www.mercari.com/us/category/sports-trading-cards-1787/'],
+    ['Poshmark sports cards','https://poshmark.com/style-tag/SPORTS%20CARDS'],
+    ['OfferUp · manual search','https://offerup.com/'],
+    ['Facebook Marketplace · manual search','https://www.facebook.com/marketplace/']
+  ];
+}
+const cardfolioBaseRenderMarketFor=renderMarketFor;
+renderMarketFor=async function(h){
+  await cardfolioBaseRenderMarketFor(h);
+  const box=$('#marketResults');
+  if(!box) return;
+  const ebayRow=box.querySelector('.button-row');
+  if(!ebayRow) return;
+  const q=marketQuery(h);
+  const primary=primaryMarketLinks(h);
+  const primaryHtml=primary.length?`<div class="market-link-group"><div class="eyebrow">Primary market</div><div class="button-row">${primary.map(([name,url])=>`<a class="btn secondary" href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)} ↗</a>`).join('')}</div></div>`:'';
+  const secondaryHtml=`<div class="market-link-group"><div class="eyebrow">Other verified marketplaces</div><div class="button-row">${secondaryMarketLinks().map(([name,url])=>`<a class="btn secondary" href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)} ↗</a>`).join('')}<button class="btn secondary" id="copyMarketQuery">Copy card search</button></div><div class="holding-meta">These are outbound links, not API-synced prices. Cardfolio does not scrape closed marketplaces or treat asking prices as sold comps.</div></div>`;
+  ebayRow.insertAdjacentHTML('afterend',`${primaryHtml}${secondaryHtml}`);
+  $('#copyMarketQuery')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(q);toast('Card search copied')}catch{toast(q)}});
+};

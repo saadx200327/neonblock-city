@@ -1,0 +1,34 @@
+name: Cardfolio critical interactions
+
+on:
+  pull_request:
+  push:
+    branches:
+      - cardfolio-mvp
+
+permissions:
+  contents: read
+
+jobs:
+  critical-interactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate critical patch syntax
+        run: node --check cardfolio-critical-fixes.js
+      - name: Validate production wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'cardfolio-critical-fixes.js' index.html
+          grep -Fq 'cardfolio-critical-fixes.js' netlify.toml
+          grep -Fq 'cardfolio-critical-fixes.js' cardfolio-sw.js
+          grep -Fq 'robustSaveHolding' cardfolio-critical-fixes.js
+          grep -Fq 'signInWithOAuth' cardfolio-critical-fixes.js
+          grep -Fq 'skipBrowserRedirect:true' cardfolio-critical-fixes.js
+          grep -Fq "provider:'google'" cardfolio-critical-fixes.js
+          grep -Fq 'Save failed' cardfolio-critical-fixes.js

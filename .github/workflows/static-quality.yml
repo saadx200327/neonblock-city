@@ -52,6 +52,23 @@ jobs:
           grep -Fq 'cardfolio-valuation-integrity.js' cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
+      - name: Validate Netlify production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f netlify.toml
+          test -f netlify/functions/config.mts
+          test -f netlify/functions/ebay.mts
+          grep -Fq 'publish = "."' netlify.toml
+          grep -Fq 'directory = "netlify/functions"' netlify.toml
+          grep -Fq 'for = "/cardfolio-sw.js"' netlify.toml
+          grep -Fq 'for = "/cardfolio-manifest.webmanifest"' netlify.toml
+          grep -Fq 'Permissions-Policy = "camera=(self), microphone=(), geolocation=()"' netlify.toml
+          grep -Fq "path: '/api/config'" netlify/functions/config.mts
+          grep -Fq "path: '/api/ebay'" netlify/functions/ebay.mts
+          node --check netlify/functions/config.mts
+          node --check netlify/functions/ebay.mts
+
       - name: Enforce reproducible browser dependencies
         shell: bash
         run: |

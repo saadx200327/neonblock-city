@@ -1,0 +1,39 @@
+name: Cardfolio Netlify deploy
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+
+permissions:
+  contents: read
+
+env:
+  NETLIFY_SITE_ID: 9dceaefb-a498-4bd2-b61b-41e1a2a4e634
+  NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Cardfolio publish directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+          cp index.html cardfolio.css cardfolio-vnext.css cardfolio-liquid.css cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-runtime-hardening.js cardfolio-critical-fixes.js cardfolio-sw.js cardfolio-manifest.webmanifest cardfolio-icon.svg dist/
+      - name: Deploy production to Netlify
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "NETLIFY_AUTH_TOKEN repository secret is not configured." >&2
+            exit 2
+          fi
+          npx --yes netlify-cli@latest deploy --prod --dir=dist --site="$NETLIFY_SITE_ID" --auth="$NETLIFY_AUTH_TOKEN"

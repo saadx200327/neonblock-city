@@ -1,5 +1,5 @@
-const CACHE='cardfolio-shell-v11';
-const SHELL=['/','/index.html','/cardfolio.css','/cardfolio-vnext.css','/cardfolio-liquid.css','/cardfolio-app.js','/cardfolio-app-2.js','/cardfolio-app-3.js','/cardfolio-app-4.js','/cardfolio-fixes.js','/cardfolio-watchlist.js','/cardfolio-grading.js','/cardfolio-valuation-integrity.js','/cardfolio-scan-review.js','/cardfolio-vnext.js','/cardfolio-product.js','/cardfolio-product-fixes.js','/cardfolio-runtime-hardening.js','/cardfolio-manifest.webmanifest','/cardfolio-icon.svg'];
+const CACHE='cardfolio-shell-v12';
+const SHELL=['/','/index.html','/cardfolio.css','/cardfolio-vnext.css','/cardfolio-liquid.css','/cardfolio-app.js','/cardfolio-app-2.js','/cardfolio-app-3.js','/cardfolio-app-4.js','/cardfolio-fixes.js','/cardfolio-watchlist.js','/cardfolio-grading.js','/cardfolio-valuation-integrity.js','/cardfolio-scan-review.js','/cardfolio-vnext.js','/cardfolio-product.js','/cardfolio-product-fixes.js','/cardfolio-runtime-hardening.js','/cardfolio-critical-fixes.js','/cardfolio-manifest.webmanifest','/cardfolio-icon.svg'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',event=>{

@@ -1,187 +1,120 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>NeonBlock City</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-<meta name="description" content="NeonBlock City is a static neon block city browser game with missions, vehicles, ownership, local saves, optional cloud saves, and PWA support.">
-<meta name="theme-color" content="#0c1020">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#090b10" />
+  <meta name="description" content="Cardfolio — scan physical collectible cards into an honest, source-aware portfolio." />
+  <title>Cardfolio</title>
+  <link rel="manifest" href="/cardfolio-manifest.webmanifest" />
+  <link rel="preconnect" href="https://api.tcgdex.net" />
+  <link rel="stylesheet" href="/cardfolio.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script defer src="/cardfolio-app.js"></script>
 </head>
 <body>
-<noscript>NeonBlock City needs JavaScript enabled to play.</noscript>
-<div id="loading-screen"><div class="loading-title">NeonBlock City</div><div class="loading-sub">Streaming world...</div></div>
-<canvas id="game-canvas" aria-label="NeonBlock City game canvas"></canvas>
-<div id="hud">
-<div id="hud-top-left">
-<div class="hud-row"><span class="hud-label">Cash</span><span id="hud-cash">0</span></div>
-<div class="hud-row"><span class="hud-label">XP</span><span id="hud-xp">0</span></div>
-<div class="hud-row"><span class="hud-label">Level</span><span id="hud-level">1</span></div>
-<div class="hud-row"><span class="hud-label">Wanted</span><span id="hud-wanted">0</span></div>
-<div class="hud-row"><span class="hud-label">State</span><span id="hud-online">offline</span></div>
-</div>
-<div id="hud-top-right">
-<div class="hud-row"><span class="hud-label">Vehicle</span><span id="hud-vehicle">On foot</span></div>
-<div class="hud-row"><span class="hud-label">HP</span><span id="hud-vehicle-hp">100</span></div>
-<div class="hud-row"><span class="hud-label">Gas</span><span id="hud-vehicle-gas">100</span></div>
-<div class="hud-row"><span class="hud-label">Mission</span><span id="hud-mission">None</span></div>
-</div>
-<div id="minimap"><canvas id="minimap-canvas" width="160" height="160" aria-label="Minimap"></canvas></div>
-<div id="waypoint-arrow">^</div>
-<div id="debug-overlay">
-<div>FPS: <span id="debug-fps">0</span></div>
-<div>Pos: <span id="debug-pos">0,0,0</span></div>
-<div>Chunks: <span id="debug-chunks">0</span></div>
-<div>NPCs: <span id="debug-npcs">0</span></div>
-<div>Vehicle: <span id="debug-active-vehicle">None</span></div>
-<div>Save slot: <span id="debug-save-slot">slot1</span></div>
-<div>Online: <span id="debug-online">offline</span></div>
-<div>Last error: <span id="debug-last-error">none</span></div>
-</div>
-</div>
-<div id="pause-overlay" class="hidden">
-<div class="menu-card">
-<h2>Pause</h2>
-<button id="btn-resume">Resume</button>
-<button id="btn-missions">Missions</button>
-<button id="btn-settings">Settings</button>
-<button id="btn-save">Save Game</button>
-<button id="btn-load">Load Game</button>
-</div>
-<div id="settings-panel" class="menu-card hidden">
-<h2>Settings</h2>
-<label>Graphics <select id="graphics-quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-<button id="btn-close-settings">Close</button>
-</div>
-<div id="mission-board" class="menu-card hidden"><h2>Mission Board</h2><ul id="mission-list"></ul><button id="btn-close-missions">Close</button></div>
-<div id="save-panel" class="menu-card hidden">
-<h2>Save / Load Slots</h2>
-<div class="slot-row"><span>Slot 1</span><button data-slot="slot1" class="btn-save-slot">Save</button><button data-slot="slot1" class="btn-load-slot">Load</button></div>
-<div class="slot-row"><span>Slot 2</span><button data-slot="slot2" class="btn-save-slot">Save</button><button data-slot="slot2" class="btn-load-slot">Load</button></div>
-<textarea id="export-json" placeholder="Exported save JSON"></textarea>
-<button id="btn-export">Export JSON</button>
-<button id="btn-import">Import JSON</button>
-<button id="btn-close-save">Close</button>
-</div>
-</div>
-<div id="reward-popup" class="hidden"></div>
-<div id="mobile-controls">
-<div id="joystick-container"><div id="joystick-base"></div><div id="joystick-stick"></div></div>
-<div id="action-rail">
-<button class="action-btn" id="btn-mobile-jump">Jump</button>
-<button class="action-btn" id="btn-mobile-sprint">Sprint</button>
-<button class="action-btn" id="btn-mobile-interact">Interact</button>
-<button class="action-btn" id="btn-mobile-unstuck">Unstuck</button>
-<button class="action-btn" id="btn-mobile-pause">Pause</button>
-</div>
-</div>
-<script src="vendor/three-0.158.0.min.js"></script>
-<script type="module" src="firebase-backend.js"></script>
-<script src="neonblock-runtime-guard.js"></script>
-<script src="neonblock-action-edge-guard.js"></script>
-<script src="neonblock-input-lifecycle-guard.js"></script>
-<script src="neonblock-webgl-recovery-polish.js"></script>
-<script src="neonblock-frame-lifecycle-guard.js"></script>
-<script src="neonblock-viewport-recovery-polish.js"></script>
-<script src="neonblock-startup-recovery-polish.js"></script>
-<script src="neonblock-editable-input-guard.js"></script>
-<script src="neonblock-pause-input-guard.js"></script>
-<script src="app.js"></script>
-<script src="neonblock-control-release-guard.js"></script>
-<script src="neonblock-mobile-pointer-guard.js"></script>
-<script src="neonblock-touch-context-guard.js"></script>
-<script src="neonblock-hardening.js"></script>
-<script src="neonblock-input-polish.js"></script>
-<script src="neonblock-economy-polish.js"></script>
-<script src="neonblock-session-polish.js"></script>
-<script src="neonblock-accessibility-polish.js"></script>
-<script src="neonblock-camera-polish.js"></script>
-<script src="neonblock-objective-polish.js"></script>
-<script src="neonblock-feedback-polish.js"></script>
-<script src="neonblock-wayfinding-polish.js"></script>
-<script src="neonblock-mobile-shell-polish.js"></script>
-<script src="neonblock-qa-polish.js"></script>
-<script src="neonblock-driving-polish.js"></script>
-<script src="neonblock-mission-polish.js"></script>
-<script src="neonblock-mobile-mission-control.js"></script>
-<script src="neonblock-property-polish.js"></script>
-<script src="neonblock-property-slot-polish.js"></script>
-<script src="neonblock-performance-polish.js"></script>
-<script src="neonblock-progression-polish.js"></script>
-<script src="neonblock-world-safety-polish.js"></script>
-<script src="neonblock-pwa-polish.js"></script>
-<script src="neonblock-pwa-lifecycle-guard.js"></script>
-<script src="neonblock-cloud-polish.js"></script>
-<script src="neonblock-onboarding-polish.js"></script>
-<script src="neonblock-garage-polish.js"></script>
-<script src="neonblock-garage-data-guard.js"></script>
-<script src="neonblock-controls-coach-polish.js"></script>
-<script src="neonblock-city-pulse-polish.js"></script>
-<script src="neonblock-hosting-polish.js"></script>
-<script src="neonblock-roadside-polish.js"></script>
-<script src="neonblock-save-doctor-polish.js"></script>
-<script src="neonblock-map-polish.js"></script>
-<script src="neonblock-district-polish.js"></script>
-<script src="neonblock-questlog-polish.js"></script>
-<script src="neonblock-vehicle-health-polish.js"></script>
-<script src="neonblock-vehicle-health-lifecycle-guard.js"></script>
-<script src="neonblock-emergency-kit-polish.js"></script>
-<script src="neonblock-checkpoint-polish.js"></script>
-<script src="neonblock-civic-polish.js"></script>
-<script src="neonblock-sidejobs-polish.js"></script>
-<script src="neonblock-inventory-polish.js"></script>
-<script src="neonblock-banking-polish.js"></script>
-<script src="neonblock-profile-polish.js"></script>
-<script src="neonblock-city-events-polish.js"></script>
-<script src="neonblock-transit-polish.js"></script>
-<script src="neonblock-delivery-board-polish.js"></script>
-<script src="neonblock-race-polish.js"></script>
-<script src="neonblock-play-settings-polish.js"></script>
-<script src="neonblock-streak-polish.js"></script>
-<script src="neonblock-route-challenges-polish.js"></script>
-<script src="neonblock-daily-bonus-polish.js"></script>
-<script src="neonblock-ride-finder-polish.js"></script>
-<script src="neonblock-property-finder-polish.js"></script>
-<script src="neonblock-crate-finder-polish.js"></script>
-<script src="neonblock-mobile-actions-polish.js"></script>
-<script src="neonblock-mobile-viewport-guard.js"></script>
-<script src="neonblock-save-resilience-polish.js"></script>
-<script src="neonblock-load-motion-guard.js"></script>
-<script src="neonblock-vehicle-restore-polish.js"></script>
-<script src="neonblock-lifecycle-save-polish.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js', { scope: '/', updateViaCache: 'none' })
-      .then(function (registration) {
-        var updateInFlight = null;
-        var lastUpdateCheckAt = 0;
-        var updateCooldownMs = 60000;
-        var update = function () {
-          var now = Date.now();
-          if (updateInFlight || now - lastUpdateCheckAt < updateCooldownMs) return updateInFlight;
-          lastUpdateCheckAt = now;
-          updateInFlight = registration.update()
-            .catch(function (error) {
-              console.warn('[NeonBlock City] Service worker update check failed:', error);
-            })
-            .finally(function () {
-              updateInFlight = null;
-            });
-          return updateInFlight;
-        };
-        window.addEventListener('online', update);
-        document.addEventListener('visibilitychange', function () {
-          if (document.visibilityState === 'visible') update();
-        });
-      })
-      .catch(function (error) {
-        console.warn('[NeonBlock City] Service worker registration failed:', error);
-      });
-  }, { once: true });
-}
-</script>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="app" class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <button class="brand" data-view="home" aria-label="Cardfolio home">
+        <span class="brand-mark">C</span><span>Cardfolio</span>
+      </button>
+      <nav class="side-nav">
+        <button data-view="home" class="nav-item active"><span>⌂</span><span>Home</span></button>
+        <button data-view="portfolio" class="nav-item"><span>▦</span><span>Portfolio</span></button>
+        <button data-view="scan" class="nav-item"><span>◎</span><span>Scan</span></button>
+        <button data-view="market" class="nav-item"><span>↗</span><span>Market</span></button>
+        <button data-view="grading" class="nav-item"><span>◇</span><span>Grading</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div id="backendBadge" class="status-pill neutral">Local Vault</div>
+        <button data-view="profile" class="nav-item"><span>○</span><span>Profile</span></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="viewEyebrow">Portfolio intelligence</div>
+          <h1 id="viewTitle">Home</h1>
+        </div>
+        <div class="top-actions">
+          <button id="quickAdd" class="btn secondary">Manual add</button>
+          <button id="authButton" class="btn primary">Sign in</button>
+        </div>
+      </header>
+      <section id="content" class="content" tabindex="-1"></section>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button data-view="home" class="active"><span>⌂</span><small>Home</small></button>
+      <button data-view="portfolio"><span>▦</span><small>Portfolio</small></button>
+      <button data-view="scan" class="scan-tab"><span>◎</span><small>Scan</small></button>
+      <button data-view="market"><span>↗</span><small>Market</small></button>
+      <button data-view="profile"><span>○</span><small>Profile</small></button>
+    </nav>
+  </div>
+
+  <dialog id="authDialog" class="modal">
+    <form method="dialog" class="modal-card" id="authForm">
+      <div class="modal-head"><div><div class="eyebrow">Cloud sync</div><h2>Sign in to Cardfolio</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
+      <p id="authExplainer" class="muted">Cloud authentication activates after the Cardfolio Supabase project is configured. Local Vault remains fully usable without an account.</p>
+      <label>Email<input id="authEmail" type="email" autocomplete="email" required /></label>
+      <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required /></label>
+      <div class="button-row"><button type="button" id="loginBtn" class="btn primary">Sign in</button><button type="button" id="signupBtn" class="btn secondary">Create account</button></div>
+      <div id="authState" class="inline-note"></div>
+    </form>
+  </dialog>
+
+  <dialog id="cardDialog" class="modal wide">
+    <form method="dialog" class="modal-card" id="cardForm">
+      <div class="modal-head"><div><div class="eyebrow">Holding</div><h2 id="cardDialogTitle">Add card</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
+      <input type="hidden" id="cardId" />
+      <div class="form-grid">
+        <label>Category<select id="category"><option>Pokémon</option><option>Basketball</option><option>Soccer</option><option>Baseball</option><option>Football</option><option>Hockey</option><option>WNBA</option><option>UFC / MMA</option><option>Wrestling</option><option>Formula 1</option><option>NASCAR</option><option>College</option><option>Other</option></select></label>
+        <label>Player / character<input id="subject" maxlength="120" required /></label>
+        <label>Year<input id="year" maxlength="12" placeholder="2025-26" /></label>
+        <label>Manufacturer<input id="manufacturer" maxlength="80" placeholder="Topps, Panini, Pokémon…" /></label>
+        <label>Brand / product<input id="brand" maxlength="100" placeholder="Prizm, Chrome, Select…" /></label>
+        <label>Set<input id="setName" maxlength="120" /></label>
+        <label>Card #<input id="cardNumber" maxlength="40" /></label>
+        <label>Parallel / variation<input id="parallel" maxlength="100" /></label>
+        <label>Serial number<input id="serialNumber" maxlength="40" placeholder="17/99" /></label>
+        <label>Team / club<input id="team" maxlength="100" /></label>
+        <label>League<input id="league" maxlength="80" /></label>
+        <label>Condition<select id="condition"><option>Raw — unknown</option><option>Near Mint</option><option>Lightly Played</option><option>Moderately Played</option><option>Heavily Played</option><option>Damaged</option></select></label>
+        <label>Quantity<input id="quantity" type="number" min="1" max="999" value="1" /></label>
+        <label>Cost basis / card ($)<input id="costBasis" type="number" min="0" step="0.01" /></label>
+        <label>Acquired from<input id="acquisitionSource" maxlength="100" placeholder="Topps, eBay, card show…" /></label>
+        <label>Acquisition date<input id="acquisitionDate" type="date" /></label>
+        <label>Manual value ($)<input id="manualValue" type="number" min="0" step="0.01" /></label>
+        <label>Grading company<select id="gradingCompany"><option value="">Raw / none</option><option>PSA</option><option>BGS</option><option>CGC</option><option>SGC</option><option>TAG</option><option>Other</option></select></label>
+        <label>Grade<input id="grade" maxlength="20" placeholder="10, 9.5…" /></label>
+        <label>Certification #<input id="certNumber" maxlength="80" /></label>
+      </div>
+      <div class="flag-row">
+        <label><input id="rookie" type="checkbox" /> Rookie / RC</label>
+        <label><input id="autograph" type="checkbox" /> Autograph</label>
+        <label><input id="relic" type="checkbox" /> Relic / memorabilia</label>
+      </div>
+      <label>Notes<textarea id="notes" rows="3" maxlength="1000"></textarea></label>
+      <div class="button-row spread"><button type="button" id="deleteCardBtn" class="btn danger hidden">Delete</button><div class="button-row"><button value="cancel" class="btn secondary">Cancel</button><button type="button" id="saveCardBtn" class="btn primary">Save holding</button></div></div>
+    </form>
+  </dialog>
+
+  <dialog id="scanReviewDialog" class="modal wide">
+    <div class="modal-card">
+      <div class="modal-head"><div><div class="eyebrow">Review before add</div><h2>Confirm scan</h2></div><button class="icon-btn" id="closeScanReview" aria-label="Close">×</button></div>
+      <div class="scan-review-layout">
+        <div><img id="scanReviewImage" class="scan-review-image" alt="Scanned card preview" /></div>
+        <div>
+          <div class="confidence-card"><span>OCR confidence</span><strong id="ocrConfidence">—</strong></div>
+          <pre id="rawOcr" class="ocr-box"></pre>
+          <div id="pokemonMatches" class="match-list"></div>
+          <div class="button-row"><button id="matchPokemonBtn" class="btn secondary hidden">Match with TCGdex</button><button id="useScanBtn" class="btn primary">Use extracted fields</button></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </body>
 </html>

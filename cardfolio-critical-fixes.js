@@ -29,6 +29,25 @@ function canonicalPayload(h={}){
     language:text(h.language||h.metadata?.language),edition:text(h.edition||h.metadata?.edition)
   };
 }
+function canonicalReadiness(h={}){
+  const missing=[];
+  if(!text(h.subject))missing.push('player/character');
+  if(!text(h.year))missing.push('year');
+  if(!text(h.card_number))missing.push('card number');
+  if(!text(h.set_name)&&!text(h.brand)&&!text(h.manufacturer))missing.push('set/product');
+  const company=text(h.grading_company),grade=text(h.grade);
+  if((company&&!grade)||(!company&&grade))missing.push(company?'grade':'grading company');
+  return {ready:missing.length===0,missing};
+}
+function pendingResolutionMetadata(metadata={},missing=[]){
+  const detail=missing.length?`Missing ${missing.join(', ')}.`:'Exact identity is still ambiguous.';
+  return {
+    ...(metadata||{}),
+    needs_canonical_link:true,
+    resolution_context:`Canonical identity pending. ${detail} Cardfolio will not create a shared market asset until exact identity is supported.`,
+    resolution_last_attempt_at:new Date().toISOString()
+  };
+}
 function setSaveState(message,isError=false){
   let box=document.getElementById('cardSaveState');
   if(!box){
@@ -91,13 +110,23 @@ async function robustSaveHolding(){
       if(!next.image_path&&photoFile){uploadedPath=await uploadHoldingPhoto(photoFile);if(uploadedPath)next.image_path=uploadedPath;}
 
       if(identityChanged||!next.canonical_card_id){
-        try{
-          const {data,error}=await state.supabase.rpc('resolve_canonical_card',{p_identity:canonicalPayload(next)});
-          if(error)throw error;
-          if(data)next.canonical_card_id=data;
-        }catch(err){
-          console.warn('Canonical identity will be retried by the research loop',err);
+        const readiness=canonicalReadiness(next);
+        if(readiness.ready){
+          try{
+            const {data,error}=await state.supabase.rpc('resolve_canonical_card',{p_identity:canonicalPayload(next)});
+            if(error)throw error;
+            if(data){
+              next.canonical_card_id=data;
+              next.metadata={...(next.metadata||{}),needs_canonical_link:false,resolution_context:null,resolution_last_attempt_at:new Date().toISOString()};
+            }
+          }catch(err){
+            console.warn('Canonical identity will be retried by the research loop',err);
+            next.canonical_card_id=null;next.valuation_status='pending_price';
+            next.metadata=pendingResolutionMetadata(next.metadata,[]);
+          }
+        }else{
           next.canonical_card_id=null;next.valuation_status='pending_price';
+          next.metadata=pendingResolutionMetadata(next.metadata,readiness.missing);
         }
       }
 
@@ -106,7 +135,8 @@ async function robustSaveHolding(){
       if(error)throw error;
       try{await syncCloud();}catch(err){console.warn('Post-save cloud refresh deferred',err);}
     }else{
-      next.metadata={...(next.metadata||{}),needs_canonical_link:true};
+      const readiness=canonicalReadiness(next);
+      next.metadata=pendingResolutionMetadata(next.metadata,readiness.ready?[]:readiness.missing);
       if(existing)Object.assign(existing,next);else state.holdings.unshift(next);
       if(typeof saveLocal!=='function')throw new Error('Local Vault is not ready. Reload and try again.');
       saveLocal();

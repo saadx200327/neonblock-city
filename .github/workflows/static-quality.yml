@@ -50,6 +50,22 @@ jobs:
           grep -Fq 'cardfolio-grading.js' cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
+      - name: Enforce reproducible browser dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '@supabase/supabase-js@2.115.0' cardfolio-app.js
+          grep -Fq 'import(SUPABASE_BROWSER_MODULE)' cardfolio-fixes.js
+          grep -Fq 'tesseract.js@5.1.1/dist/tesseract.min.js' index.html
+          if grep -Fq "@supabase/supabase-js@2'" cardfolio-*.js; then
+            echo 'Floating Supabase JS major-version import found.' >&2
+            exit 1
+          fi
+          if grep -Fq 'tesseract.js@5/dist/' index.html; then
+            echo 'Floating Tesseract v5 import found.' >&2
+            exit 1
+          fi
+
       - name: Validate backend and database assets
         shell: bash
         run: |
@@ -58,12 +74,14 @@ jobs:
           test -f api/ebay.js
           test -f supabase/cardfolio_schema.sql
           test -f supabase/cardfolio_search.sql
+          test -f supabase/cardfolio_private_provider_status.sql
           grep -Fq 'alter table public.card_holdings enable row level security' supabase/cardfolio_schema.sql
           grep -Fq 'holdings_select_own' supabase/cardfolio_schema.sql
           grep -Fq 'watchlist_select_own' supabase/cardfolio_schema.sql
           grep -Fq "public = false" supabase/cardfolio_schema.sql
           grep -Fq 'security invoker' supabase/cardfolio_search.sql
           grep -Fq 'from anon' supabase/cardfolio_search.sql
+          grep -Fq 'alter table public.provider_status set schema private' supabase/cardfolio_private_provider_status.sql
 
       - name: Prevent privileged Supabase keys in browser files
         shell: bash

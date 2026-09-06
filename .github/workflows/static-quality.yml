@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-sw.js; do
+          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-sw.js; do
             test -f "$file"
             node --check "$file"
           done
@@ -43,7 +43,9 @@ jobs:
           grep -Fq 'cardfolio-manifest.webmanifest' index.html
           grep -Fq 'cardfolio-app.js' index.html
           grep -Fq 'cardfolio-fixes.js' index.html
+          grep -Fq 'cardfolio-watchlist.js' index.html
           grep -Fq 'cardfolio-sw.js' cardfolio-app.js
+          grep -Fq 'cardfolio-watchlist.js' cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
       - name: Validate backend and database assets
@@ -55,6 +57,7 @@ jobs:
           test -f supabase/cardfolio_schema.sql
           grep -Fq 'alter table public.card_holdings enable row level security' supabase/cardfolio_schema.sql
           grep -Fq 'holdings_select_own' supabase/cardfolio_schema.sql
+          grep -Fq 'watchlist_select_own' supabase/cardfolio_schema.sql
           grep -Fq "public = false" supabase/cardfolio_schema.sql
 
       - name: Prevent privileged Supabase keys in browser files
@@ -73,3 +76,4 @@ jobs:
           grep -Fq 'Active listings only' cardfolio-app-4.js
           grep -Fq 'not a sold comp' cardfolio-app-4.js
           grep -Fq 'does not scrape closed marketplaces' cardfolio-fixes.js
+          grep -Fq 'never counted in portfolio value' cardfolio-watchlist.js

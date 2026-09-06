@@ -6,6 +6,7 @@ const money = (v) => Number.isFinite(Number(v)) ? new Intl.NumberFormat('en-US',
 const pct = (v) => `${Number(v||0).toFixed(1)}%`;
 const nowIso = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const SUPABASE_BROWSER_MODULE='https://esm.sh/@supabase/supabase-js@2.115.0';
 
 const PUBLIC_BACKEND_CONFIG={
   configured:true,
@@ -42,7 +43,7 @@ async function initBackend(){
   try{
     state.config=cfg;
     if(!cfg.configured) throw new Error('not configured');
-    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const {createClient}=await import(SUPABASE_BROWSER_MODULE);
     state.supabase=createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
     const {data:{session}}=await state.supabase.auth.getSession(); state.user=session?.user||null;
     state.supabase.auth.onAuthStateChange(async(_event,session)=>{

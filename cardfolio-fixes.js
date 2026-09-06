@@ -1,4 +1,4 @@
-/* Cardfolio QA hotfixes. Loaded last so corrected functions replace earlier declarations. */
+/* Cardfolio QA hotfixes. Loaded after core modules so corrected functions replace earlier declarations. */
 function hasNumericValue(value){
   return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 }
@@ -14,32 +14,57 @@ function holdingValue(h){
   return unitValue * Number(h.quantity || 1);
 }
 
-/* Keep local scans safe across first cloud sign-in and remove cloud data from memory on sign-out. */
+/* Keep local scans/watchlists safe across first cloud sign-in and remove cloud data from memory on sign-out. */
 let cardfolioMigrationPromise = null;
 function readLocalVault(){
   try{
     return {
       holdings: JSON.parse(localStorage.getItem(LOCAL_HOLDINGS) || '[]'),
-      snapshots: JSON.parse(localStorage.getItem(LOCAL_SNAPSHOTS) || '[]')
+      snapshots: JSON.parse(localStorage.getItem(LOCAL_SNAPSHOTS) || '[]'),
+      watchlist: JSON.parse(localStorage.getItem(LOCAL_WATCHLIST) || '[]')
     };
   }catch{
-    return {holdings:[],snapshots:[]};
+    return {holdings:[],snapshots:[],watchlist:[]};
   }
 }
 function loadLocal(){
   const local=readLocalVault();
   state.holdings=Array.isArray(local.holdings)?local.holdings:[];
   state.snapshots=Array.isArray(local.snapshots)?local.snapshots:[];
+  state.watchlist=Array.isArray(local.watchlist)?local.watchlist:[];
+}
+function saveLocal(){
+  localStorage.setItem(LOCAL_HOLDINGS,JSON.stringify(state.holdings||[]));
+  localStorage.setItem(LOCAL_SNAPSHOTS,JSON.stringify(state.snapshots||[]));
+  localStorage.setItem(LOCAL_WATCHLIST,JSON.stringify(state.watchlist||[]));
 }
 function toDb(h){
-  const allowed=['id','category','subject','year','manufacturer','brand','set_name','card_number','parallel','serial_number','team','league','condition','quantity','cost_basis','acquisition_source','acquisition_date','manual_value','grading_company','grade','cert_number','rookie','autograph','relic','notes','image_path','tcgdex_card_id','market_value','valuation_source','valuation_observed_at'];
+  const allowed=['id','category','subject','year','manufacturer','brand','set_name','card_number','parallel','serial_number','team','league','condition','quantity','cost_basis','acquisition_source','acquisition_date','manual_value','grading_company','grade','cert_number','rookie','autograph','relic','notes','image_path','tcgdex_card_id','market_value','valuation_source','valuation_observed_at','external_ids','metadata'];
   const out={};
-  for(const k of allowed) out[k]=h[k]??null;
+  for(const k of allowed){
+    if(k==='external_ids'||k==='metadata') out[k]=h[k]&&typeof h[k]==='object'?h[k]:{};
+    else out[k]=h[k]??null;
+  }
   for(const k of ['cost_basis','manual_value','market_value']) if(out[k]==='') out[k]=null;
   for(const k of ['acquisition_date','valuation_observed_at']) if(out[k]==='') out[k]=null;
   out.user_id=state.user.id;
   out.updated_at=nowIso();
   return out;
+}
+function toWatchDb(w){
+  return {
+    id:w.id,
+    user_id:state.user.id,
+    category:w.category||'Other',
+    subject:w.subject,
+    year:w.year||null,
+    manufacturer:w.manufacturer||null,
+    brand:w.brand||null,
+    set_name:w.set_name||null,
+    card_number:w.card_number||null,
+    target_price:hasNumericValue(w.target_price)?Number(w.target_price):null,
+    external_ids:w.external_ids&&typeof w.external_ids==='object'?w.external_ids:{}
+  };
 }
 async function migrateLocalToCloud(){
   if(!state.supabase||!state.user) return;
@@ -48,15 +73,18 @@ async function migrateLocalToCloud(){
     const local=readLocalVault();
     const localHoldings=Array.isArray(local.holdings)?local.holdings.filter(h=>h&&h.id&&h.subject):[];
     const localSnapshots=Array.isArray(local.snapshots)?local.snapshots.filter(s=>s&&s.id&&s.holding_id):[];
-    if(!localHoldings.length&&!localSnapshots.length) return;
-    const [{data:remoteH,error:holdingsReadError},{data:remoteS,error:snapshotsReadError}]=await Promise.all([
+    const localWatchlist=Array.isArray(local.watchlist)?local.watchlist.filter(w=>w&&w.id&&w.subject):[];
+    if(!localHoldings.length&&!localSnapshots.length&&!localWatchlist.length) return;
+    const [{data:remoteH,error:holdingsReadError},{data:remoteS,error:snapshotsReadError},{data:remoteW,error:watchReadError}]=await Promise.all([
       state.supabase.from('card_holdings').select('id'),
-      state.supabase.from('price_snapshots').select('id')
+      state.supabase.from('price_snapshots').select('id'),
+      state.supabase.from('watchlist_items').select('id')
     ]);
-    if(holdingsReadError||snapshotsReadError) throw new Error('Could not inspect cloud vault before migration');
+    if(holdingsReadError||snapshotsReadError||watchReadError) throw new Error('Could not inspect cloud vault before migration');
     const cloudHoldingIds=new Set((remoteH||[]).map(x=>x.id));
     const cloudSnapshotIds=new Set((remoteS||[]).map(x=>x.id));
-    let migratedHoldings=0,migratedSnapshots=0;
+    const cloudWatchIds=new Set((remoteW||[]).map(x=>x.id));
+    let migratedHoldings=0,migratedSnapshots=0,migratedWatchlist=0;
     for(const localHolding of localHoldings){
       if(cloudHoldingIds.has(localHolding.id)) continue;
       const row={...localHolding};
@@ -77,14 +105,23 @@ async function migrateLocalToCloud(){
       const {error}=await state.supabase.from('price_snapshots').insert(snapshot);
       if(!error){cloudSnapshotIds.add(localSnapshot.id);migratedSnapshots++;}
     }
-    if(migratedHoldings||migratedSnapshots) toast(`Cloud backup added · ${migratedHoldings} cards${migratedSnapshots?` · ${migratedSnapshots} prices`:''}`);
-  })().catch(err=>{console.warn('Cardfolio local migration failed',err);toast('Local cards are still safe on this device; cloud migration will retry.');}).finally(()=>{cardfolioMigrationPromise=null;});
+    for(const localTarget of localWatchlist){
+      if(cloudWatchIds.has(localTarget.id)) continue;
+      const {error}=await state.supabase.from('watchlist_items').insert(toWatchDb(localTarget));
+      if(!error){cloudWatchIds.add(localTarget.id);migratedWatchlist++;}
+    }
+    if(migratedHoldings||migratedSnapshots||migratedWatchlist) toast(`Cloud backup added · ${migratedHoldings} cards${migratedWatchlist?` · ${migratedWatchlist} targets`:''}${migratedSnapshots?` · ${migratedSnapshots} prices`:''}`);
+  })().catch(err=>{console.warn('Cardfolio local migration failed',err);toast('Device data is still safe; cloud migration will retry.');}).finally(()=>{cardfolioMigrationPromise=null;});
   return cardfolioMigrationPromise;
 }
 async function initBackend(){
+  let cfg=PUBLIC_BACKEND_CONFIG;
   try{
-    const r=await fetch('/api/config',{cache:'no-store'});if(!r.ok) throw new Error('no config');
-    const cfg=await r.json();state.config=cfg;if(!cfg.configured) throw new Error('not configured');
+    const r=await fetch('/api/config',{cache:'no-store'});
+    if(r.ok){const remote=await r.json();if(remote?.configured)cfg={...cfg,...remote};}
+  }catch{}
+  try{
+    state.config=cfg;if(!cfg.configured) throw new Error('not configured');
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
     state.supabase=createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
     const {data:{session}}=await state.supabase.auth.getSession();state.user=session?.user||null;
@@ -100,7 +137,7 @@ async function initBackend(){
     });
     if(state.user){await migrateLocalToCloud();await syncCloud();}
   }catch{
-    state.backend='local';state.user=null;loadLocal();$('#backendBadge').textContent='Local Vault';$('#backendBadge').className='status-pill neutral';
+    state.backend='local';state.supabase=null;state.user=null;loadLocal();$('#backendBadge').textContent='Local Vault';$('#backendBadge').className='status-pill neutral';
   }
   updateAuthButton();
 }

@@ -1,10 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import postgres from "npm:postgres@3.4.5";
 
 const MAX_IMAGE_DATA_URL = 3_400_000;
 const MAX_OCR_TEXT = 5000;
 const MAX_KNOWN_FIELDS = 5000;
 const DEFAULT_MODEL = "gpt-5.6-sol";
 const CANONICAL_ORIGIN = "https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app";
+const VAULT_SECRET_NAME = "cardfolio_openai_api_key";
+const MAX_REQUESTS_PER_HOUR = 120;
+const MAX_REQUESTS_PER_DAY = 500;
 const ALLOWED_FIELDS = [
   "category","subject","year","manufacturer","brand","set_name","subset","card_number",
   "parallel","variant_name","serial_number","serial_denominator","team","league",
@@ -12,6 +17,14 @@ const ALLOWED_FIELDS = [
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
+type VisionMode = "identify" | "compare";
+
+type AuthenticatedUser = {
+  id: string;
+};
+
+const dbUrl = Deno.env.get("SUPABASE_DB_URL") || "";
+const sql = dbUrl ? postgres(dbUrl, { max: 1, prepare: false, idle_timeout: 10 }) : null;
 
 function safeText(value: unknown, max = 1000): string {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
@@ -51,6 +64,73 @@ function json(req: Request, status: number, body: JsonRecord): Response {
     status,
     headers: { ...corsHeaders(req), "Content-Type": "application/json; charset=utf-8" }
   });
+}
+function publicSupabaseKey(): string {
+  const legacy = safeText(Deno.env.get("SUPABASE_ANON_KEY"), 4000);
+  if (legacy) return legacy;
+  try {
+    const keys = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+    return safeText(keys?.default, 4000);
+  } catch {
+    return "";
+  }
+}
+async function requireUser(req: Request): Promise<AuthenticatedUser | null> {
+  const authHeader = safeText(req.headers.get("authorization"), 5000);
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+  const supabaseUrl = safeText(Deno.env.get("SUPABASE_URL"), 1000);
+  const apiKey = publicSupabaseKey();
+  if (!token || !supabaseUrl || !apiKey) return null;
+
+  try {
+    const supabase = createClient(supabaseUrl, apiKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    });
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user?.id) return null;
+    return { id: data.user.id };
+  } catch {
+    return null;
+  }
+}
+async function enforceRateLimit(userId: string, mode: VisionMode): Promise<{ ok: boolean; retryAfterSeconds?: number }> {
+  if (!sql) return { ok: false, retryAfterSeconds: 60 };
+  const rows = await sql`
+    select
+      count(*) filter (where created_at >= now() - interval '1 hour')::int as hour_count,
+      count(*) filter (where created_at >= now() - interval '1 day')::int as day_count
+    from private.card_vision_rate_events
+    where user_id = ${userId}::uuid
+      and created_at >= now() - interval '1 day'
+  `;
+  const hourCount = Number(rows?.[0]?.hour_count || 0);
+  const dayCount = Number(rows?.[0]?.day_count || 0);
+  if (hourCount >= MAX_REQUESTS_PER_HOUR || dayCount >= MAX_REQUESTS_PER_DAY) {
+    return { ok: false, retryAfterSeconds: hourCount >= MAX_REQUESTS_PER_HOUR ? 3600 : 86400 };
+  }
+  await sql`
+    insert into private.card_vision_rate_events (user_id, mode)
+    values (${userId}::uuid, ${mode})
+  `;
+  return { ok: true };
+}
+async function getOpenAIKey(): Promise<string> {
+  const envKey = safeText(Deno.env.get("OPENAI_API_KEY"), 1000);
+  if (envKey) return envKey;
+  if (!sql) return "";
+  try {
+    const rows = await sql`
+      select decrypted_secret
+      from vault.decrypted_secrets
+      where name = ${VAULT_SECRET_NAME}
+      order by updated_at desc
+      limit 1
+    `;
+    return safeText(rows?.[0]?.decrypted_secret, 1000);
+  } catch {
+    return "";
+  }
 }
 function extractOutputText(response: JsonRecord): string {
   if (typeof response.output_text === "string") return response.output_text;
@@ -150,7 +230,7 @@ If photos do not reveal enough to decide, return ambiguous rather than guessing.
 Known reference identity (supplementary, not a substitute for the images):\n${safeJson(knownIdentity)}`;
 }
 async function callOpenAI(payload: JsonRecord): Promise<JsonRecord> {
-  const key = Deno.env.get("OPENAI_API_KEY");
+  const key = await getOpenAIKey();
   if (!key) throw Object.assign(new Error("NOT_CONFIGURED"), { code: "NOT_CONFIGURED" });
   const r = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -170,11 +250,21 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST") return json(req, 405, { error: "POST required" });
 
+  const user = await requireUser(req);
+  if (!user) return json(req, 401, { error: "Sign in to use GPT card vision" });
+
   let body: JsonRecord;
   try { body = await req.json() as JsonRecord; }
   catch { return json(req, 400, { error: "Valid JSON is required" }); }
 
-  const mode = body?.mode === "compare" ? "compare" : "identify";
+  const mode: VisionMode = body?.mode === "compare" ? "compare" : "identify";
+  const rate = await enforceRateLimit(user.id, mode).catch(() => ({ ok: false, retryAfterSeconds: 60 }));
+  if (!rate.ok) {
+    const response = json(req, 429, { error: "GPT card vision rate limit reached. Try again later." });
+    response.headers.set("Retry-After", String(rate.retryAfterSeconds || 60));
+    return response;
+  }
+
   const referenceImage = body?.imageDataUrl || body?.referenceImageDataUrl;
   if (!isImageDataUrl(referenceImage)) return json(req, 400, { error: "A compressed JPEG, PNG, or WebP card image is required" });
 

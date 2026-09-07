@@ -16,6 +16,8 @@ jobs:
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
     steps:
+      - uses: actions/checkout@v4
+
       - name: Probe canonical Vercel surfaces
         shell: bash
         run: |
@@ -24,7 +26,8 @@ jobs:
           body="$(mktemp)"
           config="$(mktemp)"
           proxy="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$config" "$proxy"' EXIT
+          remote="$(mktemp)"
+          trap 'rm -f "$headers" "$body" "$config" "$proxy" "$remote"' EXIT
 
           root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
@@ -32,8 +35,6 @@ jobs:
           echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
           echo "root title: $(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
           echo "root current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$body" && echo yes || echo no)"
-          echo 'root script sources:'
-          grep -Eio '<script[^>]+src="[^"]+"' "$body" | head -n 30 || true
 
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
@@ -59,3 +60,16 @@ jobs:
           echo "legacy proxy bytes: $(wc -c < "$proxy" | tr -d ' ')"
           echo "legacy proxy title: $(grep -Eio '<title>[^<]*</title>' "$proxy" | head -n 1 || true)"
           echo "legacy proxy current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$proxy" && echo yes || echo no)"
+          echo "legacy proxy index exact-current-head: $([ "$(sha256sum index.html | cut -d' ' -f1)" = "$(sha256sum "$proxy" | cut -d' ' -f1)" ] && echo yes || echo no)"
+
+          for file in cardfolio-critical-fixes.js cardfolio-production-guard.js cardfolio-exact-identity-client.js; do
+            direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
+            direct_match=no
+            if [ "$direct_status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
+            echo "direct asset $file: HTTP ${direct_status:-curl-error}, exact-current-head=$direct_match"
+
+            proxy_asset_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
+            proxy_match=no
+            if [ "$proxy_asset_status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
+            echo "proxy asset $file: HTTP ${proxy_asset_status:-curl-error}, exact-current-head=$proxy_match"
+          done

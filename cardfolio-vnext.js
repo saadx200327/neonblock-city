@@ -297,6 +297,8 @@ async function signInWithGoogle(){
   const {error}=await state.supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin}});if(error){console.warn(error);toast('Google sign-in needs provider configuration');}
 }
 function ensureGoogleAuthButton(){
+  // The product layer owns the Google button and its canonical return path.
+  if($('#googleLoginBtn')){$('#googleSignInBtn')?.remove();return;}
   const authRow=$('#authDialog .button-row');if(authRow&&!$('#googleSignInBtn'))authRow.insertAdjacentHTML('beforebegin','<button type="button" id="googleSignInBtn" class="btn google-btn full-btn">Continue with Google</button>');
   $('#googleSignInBtn')?.addEventListener('click',signInWithGoogle);
 }

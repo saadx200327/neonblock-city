@@ -37,11 +37,8 @@ jobs:
           grep -Fq 'Referrer-Policy' vercel.json
           grep -Fq 'Permissions-Policy' vercel.json
           grep -Fq 'cardfolio-critical-fixes.js' index.html
-          grep -Fq 'cardfolio-exact-identity-client.js' index.html
-          grep -Fq 'cardfolio-production-guard.js' index.html
-          grep -Fq 'cardfolio-critical-fixes.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-exact-identity-client.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-production-guard.js' cardfolio-sw.js
+          grep -Fq 'api/proxy?path=cardfolio-exact-identity-client.js' index.html
+          grep -Fq 'api/proxy?path=cardfolio-production-guard.js' index.html
           grep -Fq 'robustSaveHolding' cardfolio-critical-fixes.js
           grep -Fq 'signInWithOAuth' cardfolio-critical-fixes.js
           grep -Fq 'skipBrowserRedirect:true' cardfolio-critical-fixes.js
@@ -65,36 +62,63 @@ jobs:
         run: |
           set -euo pipefail
           headers="$(mktemp)"
+          root="$(mktemp)"
           body="$(mktemp)"
           config="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$config"' EXIT
+          script="$(mktemp)"
+          trap 'rm -f "$headers" "$root" "$body" "$config" "$script"' EXIT
 
           ready=0
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 4); do
             : > "$headers"
-            : > "$body"
-            status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
-            if [ "$status" = "200" ] \
+            : > "$root"
+            root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$root" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
+            proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$body" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html" || true)"
+
+            if [ "$root_status" = "200" ] \
+              && [ "$proxy_status" = "200" ] \
+              && grep -Fq '<title>Cardfolio</title>' "$root" \
+              && grep -Fq "location.replace('/api/proxy?path=index.html')" "$root" \
+              && grep -Eiq '^x-vercel-id:' "$headers" \
               && grep -Fq '<title>Cardfolio</title>' "$body" \
-              && grep -Fq 'cardfolio-production-guard.js' "$body" \
-              && grep -Eiq '^x-vercel-id:' "$headers"; then
+              && grep -Fq '/api/proxy?path=cardfolio-production-guard.js' "$body" \
+              && [ "$(sha256sum index.html | cut -d' ' -f1)" = "$(sha256sum "$body" | cut -d' ' -f1)" ]; then
               ready=1
               break
             fi
-            echo "Production not ready on attempt $attempt (HTTP ${status:-curl-error}); retrying..."
-            sleep 10
+
+            echo "Production proxy not current on attempt $attempt (root=${root_status:-curl-error}, proxy=${proxy_status:-curl-error}); retrying..."
+            sleep 5
           done
 
           if [ "$ready" -ne 1 ]; then
-            echo 'Canonical Vercel production URL did not become the current READY Cardfolio deployment.' >&2
-            echo 'Safe response fingerprint:' >&2
-            grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 30 >&2 || true
-            title="$(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
-            echo "HTML title: ${title:-<none>}" >&2
-            echo "Current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$body" && echo yes || echo no)" >&2
-            echo "Body SHA-256: $(sha256sum "$body" | awk '{print $1}')" >&2
+            echo 'Canonical Vercel shell or proxied Cardfolio app is not current.' >&2
+            echo "Root SHA-256: $(sha256sum "$root" | awk '{print $1}')" >&2
+            echo "Proxy SHA-256: $(sha256sum "$body" | awk '{print $1}')" >&2
+            echo "Branch index SHA-256: $(sha256sum index.html | awk '{print $1}')" >&2
             exit 1
           fi
+
+          echo 'Validating every local script referenced by the live proxied index...'
+          BODY_FILE="$body" node <<'NODE' > /tmp/cardfolio-local-scripts.txt
+          const fs = require('fs');
+          const html = fs.readFileSync(process.env.BODY_FILE, 'utf8');
+          const urls = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(m => m[1]).filter(src => src.startsWith('/'));
+          for (const url of [...new Set(urls)]) console.log(url);
+          NODE
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            : > "$headers"
+            status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$script" -w '%{http_code}' "$PRODUCTION_URL$path" || true)"
+            test "$status" = "200"
+            if ! grep -Eiq '^content-type: *(text|application)/javascript' "$headers"; then
+              echo "Unexpected script MIME for $path" >&2
+              grep -i '^content-type:' "$headers" >&2 || true
+              exit 1
+            fi
+            echo "OK $path"
+          done < /tmp/cardfolio-local-scripts.txt
 
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
           test "$config_status" = "200"

@@ -25,8 +25,15 @@ jobs:
           node --check cardfolio-scan-review.js
           test ! -f api/card-vision.js
           test -f supabase/functions/card-vision/index.ts
+          test -f supabase/migrations/20260907181100_card_vision_rate_limits.sql
 
+          grep -Fq 'createClient' supabase/functions/card-vision/index.ts
+          grep -Fq 'auth.getUser(token)' supabase/functions/card-vision/index.ts
+          grep -Fq 'VAULT_SECRET_NAME = "cardfolio_openai_api_key"' supabase/functions/card-vision/index.ts
           grep -Fq 'Deno.env.get("OPENAI_API_KEY")' supabase/functions/card-vision/index.ts
+          grep -Fq 'vault.decrypted_secrets' supabase/functions/card-vision/index.ts
+          grep -Fq 'MAX_REQUESTS_PER_HOUR = 120' supabase/functions/card-vision/index.ts
+          grep -Fq 'MAX_REQUESTS_PER_DAY = 500' supabase/functions/card-vision/index.ts
           grep -Fq 'store: false' supabase/functions/card-vision/index.ts
           grep -Fq 'detail: "high"' supabase/functions/card-vision/index.ts
           grep -Fq 'mode === "compare"' supabase/functions/card-vision/index.ts
@@ -37,19 +44,26 @@ jobs:
           grep -Fq "visionBackend:'supabase-edge'" api/config.js
           echo 'Vision source contract verified.'
 
-      - name: Verify Supabase production vision worker is JWT-gated
+      - name: Verify production worker enforces app-level authentication
         shell: bash
         run: |
           set -euo pipefail
           status="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/cardfolio-vision-body -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"mode":"identify"}' "$SUPABASE_FUNCTION_URL" || true)"
           echo "Supabase card-vision unauthenticated HTTP: ${status:-curl-error}"
           test "$status" = "401"
-          echo 'Supabase card-vision is deployed and rejects unauthenticated requests.'
+          node <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync('/tmp/cardfolio-vision-body','utf8'));
+          if(!/sign in/i.test(String(body.error||'')))process.exit(1);
+          console.log('Production card-vision rejects callers without a real user session.');
+          NODE
 
-      - name: Confirm vision backend ownership is explicit in source
+      - name: Confirm backend ownership and fail-closed behavior
         shell: bash
         run: |
           set -euo pipefail
           grep -Fq "visionBackend:'supabase-edge'" api/config.js
           grep -Fq "functions.invoke('card-vision'" cardfolio-scan-review.js
-          echo 'Cardfolio vision is owned by the Supabase Edge Function, not the legacy Vercel API shell.'
+          grep -Fq "configured: false" supabase/functions/card-vision/index.ts
+          grep -Fq 'needs_visual_analysis:true' cardfolio-scan-review.js
+          echo 'Cardfolio vision is Supabase-owned and fails closed when model credentials are unavailable.'

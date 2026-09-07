@@ -1,6 +1,6 @@
 /* Cardfolio product QA fixes — persist exact variant identity dimensions and force
-   canonical re-resolution on edits so base/parallel/auto/relic/graded variants
-   can never silently inherit a stale market record. Loaded after cardfolio-product.js. */
+   canonical re-resolution only when an exact shared-market identity field changes.
+   Loaded after cardfolio-product.js. */
 (function(){
 'use strict';
 
@@ -42,39 +42,56 @@ openCardDialog=function(h=null,prefill=null){
   const edition=document.getElementById('edition');if(edition&&!edition.value)edition.value=data.edition||meta.edition||'';
 };
 
+function normIdentity(v){return String(v??'').trim().replace(/\s+/g,' ').toLowerCase()}
+function serialDenominator(v){
+  const parts=String(v??'').trim().split('/');
+  return parts.length>1?normIdentity(parts[parts.length-1]):'';
+}
+function exactIdentitySignature(h={}){
+  return [
+    h.category,h.subject,h.year,h.manufacturer,h.brand,h.set_name,h.subset,h.card_number,
+    h.parallel,h.variant_name,h.card_type,h.team,h.league,!!h.rookie,!!h.autograph,!!h.relic,
+    serialDenominator(h.serial_number),h.grading_company,h.grade,h.language,h.edition
+  ].map(normIdentity).join('|');
+}
+
 const productSaveCardFromForm=saveCardFromForm;
 saveCardFromForm=async function(){
   const id=document.getElementById('cardId')?.value||'';
   const existing=id?state.holdings.find(x=>x.id===id):null;
-  const prior=existing?{
+  const next=existing?readCardForm():null;
+  const identityChanged=!!existing&&exactIdentitySignature(existing)!==exactIdentitySignature(next);
+  const prior=identityChanged?{
     canonical_card_id:existing.canonical_card_id,
     market_value:existing.market_value,
     valuation_source:existing.valuation_source,
     valuation_observed_at:existing.valuation_observed_at,
     valuation_status:existing.valuation_status
   }:null;
-  // Re-resolve every edited holding. The RPC is idempotent for unchanged cards and
-  // prevents newly edited subset/variation/language/edition fields from retaining
-  // the former card's canonical price.
-  if(existing){
+
+  /* Keep the existing shared asset for quantity/cost/notes/acquisition edits. This avoids
+     unnecessary resolver reads and writes on Supabase free tier. Exact identity edits
+     deliberately clear linkage so the product layer must invoke the canonical resolver. */
+  if(identityChanged){
     existing.canonical_card_id=null;
     existing.market_value=null;
     existing.valuation_source='';
     existing.valuation_observed_at=null;
     existing.valuation_status='pending_price';
   }
+
   try{
     await productSaveCardFromForm();
   }finally{
     const current=id?state.holdings.find(x=>x.id===id):null;
-    // If the cloud save failed before sync, restore the in-memory view. The next
-    // successful save will retry canonical resolution.
-    if(existing&&current&&!current.canonical_card_id&&prior?.canonical_card_id){
-      current.canonical_card_id=prior.canonical_card_id;
-      current.market_value=prior.market_value;
-      current.valuation_source=prior.valuation_source;
-      current.valuation_observed_at=prior.valuation_observed_at;
-      current.valuation_status=prior.valuation_status;
+    // A successful cloud save replaces the in-memory holding during syncCloud(). If the
+    // original object remains after failure/local-only handling, restore its prior view.
+    if(identityChanged&&prior&&current===existing&&state?.holdings?.includes?.(existing)){
+      existing.canonical_card_id=prior.canonical_card_id;
+      existing.market_value=prior.market_value;
+      existing.valuation_source=prior.valuation_source;
+      existing.valuation_observed_at=prior.valuation_observed_at;
+      existing.valuation_status=prior.valuation_status;
     }
   }
 };

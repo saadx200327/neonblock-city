@@ -23,21 +23,22 @@ jobs:
         run: |
           set -euo pipefail
           node --check cardfolio-save-stack-guard.js
+          node --check cardfolio-save-v2.js
           node --check cardfolio-ui-prune.js
-          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-2' index.html
-          grep -Fq 'definitiveSave' cardfolio-save-stack-guard.js
-          grep -Fq 'readPrimitiveForm' cardfolio-save-stack-guard.js
-          grep -Fq "document.addEventListener('click',interceptSave,true)" cardfolio-save-stack-guard.js
-          if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-stack-guard.js; then
-            echo 'Save stack guard must not call the layered readCardForm chain.' >&2
+          grep -Fq 'definitiveSave' cardfolio-save-v2.js
+          grep -Fq 'readPrimitiveForm' cardfolio-save-v2.js
+          grep -Fq "document.addEventListener('click',interceptSave,true)" cardfolio-save-v2.js
+          grep -Fq 'cardfolio-save-v2.js' cardfolio-live-fix-20260907.html
+          if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-v2.js; then
+            echo 'Definitive save path must not call readCardForm.' >&2
             exit 1
           fi
-          if grep -Eq '(^|[^A-Za-z])toDb\(' cardfolio-save-stack-guard.js; then
-            echo 'Save stack guard must not call the layered toDb chain.' >&2
+          if grep -Eq '(^|[^A-Za-z])toDb\(' cardfolio-save-v2.js; then
+            echo 'Definitive save path must not call toDb.' >&2
             exit 1
           fi
 
-      - name: Verify live proxy can serve the fixed index and guard
+      - name: Verify uncached live Safari entry and save handler
         if: github.event_name == 'push'
         shell: bash
         run: |
@@ -46,24 +47,38 @@ jobs:
           trap 'rm -f "$remote"' EXIT
           rev="${GITHUB_SHA}-${GITHUB_RUN_ID}"
 
-          index_ok=0
+          entry_ok=0
           guard_ok=0
           for attempt in $(seq 1 12); do
-            index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&rev=$rev-$attempt" || true)"
-            if [ "$index_status" = "200" ] && grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-2' "$remote"; then
-              index_ok=1
+            entry_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-live-fix-20260907.html&rev=$rev-$attempt" || true)"
+            if [ "$entry_status" = "200" ] && grep -Fq 'cardfolio-save-v2.js' "$remote" && grep -Fq 'Loading the corrected save path' "$remote"; then
+              entry_ok=1
             fi
 
-            guard_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-save-stack-guard.js&rev=$rev-$attempt" || true)"
+            guard_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-save-v2.js&rev=$rev-$attempt" || true)"
             if [ "$guard_status" = "200" ] && grep -Fq 'Cardfolio definitive save path for iOS/Safari' "$remote" && grep -Fq 'definitiveSave' "$remote"; then
               guard_ok=1
             fi
 
-            echo "attempt=$attempt index=$index_status index_ok=$index_ok guard=$guard_status guard_ok=$guard_ok"
-            if [ "$index_ok" -eq 1 ] && [ "$guard_ok" -eq 1 ]; then break; fi
+            echo "attempt=$attempt entry=$entry_status entry_ok=$entry_ok guard=$guard_status guard_ok=$guard_ok"
+            if [ "$entry_ok" -eq 1 ] && [ "$guard_ok" -eq 1 ]; then break; fi
             sleep 5
           done
 
-          test "$index_ok" -eq 1
+          test "$entry_ok" -eq 1
           test "$guard_ok" -eq 1
-          echo 'Live proxy serves the cache-busted capture-phase primitive-only Cardfolio save handler.'
+          echo 'Live uncached Safari entry and primitive-only save handler are available.'
+
+      - name: Report canonical index freshness
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(mktemp)"
+          trap 'rm -f "$remote"' EXIT
+          status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&fresh=${GITHUB_SHA}" || true)"
+          if [ "$status" = "200" ] && grep -Fq 'stackfix-2' "$remote"; then
+            echo 'Canonical proxied index is current.'
+          else
+            echo 'WARNING: canonical proxied index is stale; uncached live entry remains the verified recovery path.'
+          fi

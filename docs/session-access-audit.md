@@ -14,7 +14,9 @@ Mission: improve the existing Cardfolio product on GitHub + Supabase + Vercel. A
 - Vercel connector lists team team_4sSd0YIrjh1mlefS95vYhY0q (saadahmed0020-3481s-projects), but its project list is empty. Production URL, deployment access, environment variables and logs remain unverified.
 - No command-line GitHub/Vercel/Supabase credentials are configured. GitHub connector is the available write path.
 - Google Cloud console renders Site Unavailable in the session browser; OAuth client configuration has not been inspected.
-- Supabase dashboard provider-configuration access still needs verification separately from database connector access.
+- Supabase dashboard access is now verified after GitHub email device verification and a fresh OAuth request. Google provider client ID and callback controls are accessible; no secret was revealed.
+- P0 confirmed configuration defect: Site URL is http://localhost:3000 and Redirect URLs is empty. Exact production URL is required before correcting these settings.
+- Vercel team/project listing was rechecked and still returns zero projects.
 
 ## Initial defect register
 1. P0 access: establish Vercel project scope and exact live production URL before deployment.

@@ -12,7 +12,7 @@ permissions:
 jobs:
   probe-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
     steps:
@@ -25,19 +25,13 @@ jobs:
           headers="$(mktemp)"
           body="$(mktemp)"
           config="$(mktemp)"
-          proxy="$(mktemp)"
           remote="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$config" "$proxy" "$remote"' EXIT
+          trap 'rm -f "$headers" "$body" "$config" "$remote"' EXIT
 
           root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
-          grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 30 || true
           echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
-          echo "root title: $(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
-          echo "root current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$body" && echo yes || echo no)"
-          echo 'root body:'
-          cat "$body"
-          echo
+          echo "root redirects to proxy: $(grep -Fq "location.replace('/api/proxy?path=index.html')" "$body" && echo yes || echo no)"
 
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
@@ -47,32 +41,56 @@ jobs:
           try {
             const cfg = JSON.parse(raw);
             console.log('api/config summary:', JSON.stringify({
-              keys: Object.keys(cfg).sort(),
               configured: cfg.configured,
               supabaseUrl: cfg.supabaseUrl,
               publishableKeyType: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
               ebayConfigured: cfg.ebayConfigured
             }));
           } catch {
-            console.log(`api/config was not JSON; bytes=${Buffer.byteLength(raw)}`);
+            console.log('api/config not-json');
           }
           NODE
 
-          proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$proxy" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html" || true)"
-          echo "legacy proxy HTTP: ${proxy_status:-curl-error}"
-          echo "legacy proxy bytes: $(wc -c < "$proxy" | tr -d ' ')"
-          echo "legacy proxy title: $(grep -Eio '<title>[^<]*</title>' "$proxy" | head -n 1 || true)"
-          echo "legacy proxy current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$proxy" && echo yes || echo no)"
-          echo "legacy proxy index exact-current-head: $([ "$(sha256sum index.html | cut -d' ' -f1)" = "$(sha256sum "$proxy" | cut -d' ' -f1)" ] && echo yes || echo no)"
+          assets=(
+            cardfolio-manifest.webmanifest
+            cardfolio-icon.svg
+            cardfolio.css
+            cardfolio-vnext.css
+            cardfolio-liquid.css
+            cardfolio-app.js
+            cardfolio-app-2.js
+            cardfolio-app-3.js
+            cardfolio-app-4.js
+            cardfolio-fixes.js
+            cardfolio-watchlist.js
+            cardfolio-grading.js
+            cardfolio-valuation-integrity.js
+            cardfolio-scan-review.js
+            cardfolio-vnext.js
+            cardfolio-product.js
+            cardfolio-product-fixes.js
+            cardfolio-runtime-hardening.js
+            cardfolio-critical-fixes.js
+            cardfolio-commercial.js
+            cardfolio-identity-persistence.js
+            cardfolio-exact-identity-client.js
+            cardfolio-production-guard.js
+            cardfolio-market-integrity.js
+          )
 
-          for file in cardfolio-critical-fixes.js cardfolio-production-guard.js cardfolio-exact-identity-client.js; do
-            direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
+          echo 'asset audit:'
+          for file in "${assets[@]}"; do
+            : > "$headers"
+            direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
+            direct_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
             direct_match=no
-            if [ "$direct_status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
-            echo "direct asset $file: HTTP ${direct_status:-curl-error}, exact-current-head=$direct_match"
+            if [ "$direct_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
 
-            proxy_asset_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
+            : > "$headers"
+            proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
+            proxy_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
             proxy_match=no
-            if [ "$proxy_asset_status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
-            echo "proxy asset $file: HTTP ${proxy_asset_status:-curl-error}, exact-current-head=$proxy_match"
+            if [ "$proxy_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
+
+            printf '%s | direct=%s match=%s type=%s | proxy=%s match=%s type=%s\n' "$file" "${direct_status:-curl-error}" "$direct_match" "${direct_type:-?}" "${proxy_status:-curl-error}" "$proxy_match" "${proxy_type:-?}"
           done

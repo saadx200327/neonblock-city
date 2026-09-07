@@ -1,9 +1,24 @@
 /* Cardfolio exact-identity edit hardening.
-   The product layer's legacy identity-change signature does not include subset/insert.
-   If an owner edits that field on an already-linked holding, force canonical re-resolution
-   and clear the old valuation before the normal save path runs. */
+   The product layer's legacy persistence/identity signature predates subset, variant,
+   card type, language and edition. Preserve those fields in card_holdings, and if an
+   owner edits subset on an already-linked holding, force canonical re-resolution and
+   clear the old valuation before the normal save path runs. */
 (function(){
 'use strict';
+
+/* Persist every exact-identity field that has a real card_holdings column. Without this
+   wrapper, subset/language/edition could appear in the form and resolver payload but be
+   dropped from the owner's saved row on the next cloud write. */
+if(typeof toDb==='function'){
+  const baseToDb=toDb;
+  toDb=function(h){
+    const out=baseToDb(h);
+    for(const key of ['subset','variant_name','card_type','language','edition']){
+      out[key]=h?.[key]??null;
+    }
+    return out;
+  };
+}
 
 if(typeof saveCardFromForm!=='function')return;
 

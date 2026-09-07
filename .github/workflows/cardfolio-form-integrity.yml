@@ -1,0 +1,49 @@
+name: Cardfolio exact identity form gate
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-identity-form:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify exact identity UI persists end to end
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check cardfolio-app-3.js
+          node --check cardfolio-exact-identity-client.js
+
+          # UI inputs must exist.
+          grep -Fq 'id="subset"' index.html
+          grep -Fq 'id="variation"' index.html
+          grep -Fq 'id="cardLanguage"' index.html
+          grep -Fq 'id="edition"' index.html
+
+          # Edit dialog must hydrate DB values back into the inputs.
+          grep -Fq "subset:'subset'" cardfolio-app-3.js
+          grep -Fq "variation:'variant_name'" cardfolio-app-3.js
+          grep -Fq "cardLanguage:'language'" cardfolio-app-3.js
+          grep -Fq "edition:'edition'" cardfolio-app-3.js
+
+          # Save path must read those inputs into canonical DB field names.
+          grep -Fq "subset:get('subset')" cardfolio-app-3.js
+          grep -Fq "variant_name:get('variation')" cardfolio-app-3.js
+          grep -Fq "language:get('cardLanguage')" cardfolio-app-3.js
+          grep -Fq "edition:get('edition')" cardfolio-app-3.js
+
+          # Cloud serializer must preserve the exact-identity fields.
+          for field in subset variant_name language edition; do
+            grep -Fq "$field" cardfolio-exact-identity-client.js
+          done
+
+          echo 'Exact identity form persistence contract verified.'

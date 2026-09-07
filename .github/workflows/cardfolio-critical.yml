@@ -84,6 +84,11 @@ jobs:
 
           if [ "$ready" -ne 1 ]; then
             echo 'Canonical Vercel production URL did not become a READY Cardfolio deployment.' >&2
+            echo 'Safe response fingerprint:' >&2
+            grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 30 >&2 || true
+            title="$(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
+            echo "HTML title: ${title:-<none>}" >&2
+            echo "Body SHA-256: $(sha256sum "$body" | awk '{print $1}')" >&2
             exit 1
           fi
 

@@ -1,0 +1,70 @@
+name: Cardfolio GPT vision gate
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gpt-vision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify private image-to-GPT contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check api/card-vision.js
+          node --check cardfolio-scan-review.js
+          grep -Fq "verifyUser(token)" api/card-vision.js
+          grep -Fq "store:false" api/card-vision.js
+          grep -Fq "detail:'high'" api/card-vision.js
+          grep -Fq "mode==='compare'" api/card-vision.js
+          grep -Fq "Do NOT price the card" api/card-vision.js
+          grep -Fq "Authorization:\`Bearer \${token}\`" cardfolio-scan-review.js
+          grep -Fq "needs_visual_analysis:false" cardfolio-scan-review.js
+          grep -Fq "confidence<0.78" cardfolio-scan-review.js
+          echo 'Vision source contract verified.'
+
+      - name: Verify production vision route exists without exposing it publicly
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=''
+          for attempt in 1 2 3 4 5 6 7 8; do
+            status="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/cardfolio-vision-body -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"mode":"identify"}' "$PRODUCTION_URL/api/card-vision" || true)"
+            echo "attempt $attempt: /api/card-vision HTTP ${status:-curl-error}"
+            if [ "$status" = "401" ]; then break; fi
+            sleep 5
+          done
+          test "$status" = "401"
+          node <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync('/tmp/cardfolio-vision-body','utf8'));
+          if(!/sign in/i.test(String(body.error||'')))process.exit(1);
+          console.log('Vision route is deployed and authentication-gated.');
+          NODE
+
+      - name: Report safe production vision readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$PRODUCTION_URL/api/config" -o /tmp/cardfolio-config
+          node <<'NODE'
+          const fs=require('fs');
+          const cfg=JSON.parse(fs.readFileSync('/tmp/cardfolio-config','utf8'));
+          if(typeof cfg.visionConfigured!=='boolean'){
+            console.error('api/config is missing visionConfigured readiness state');
+            process.exit(1);
+          }
+          console.log(`GPT vision configured: ${cfg.visionConfigured}`);
+          console.log(`GPT vision model: ${cfg.visionModel||'(default)'}`);
+          NODE

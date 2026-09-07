@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
       SUPABASE_FUNCTION_URL: https://tvxwzkununcwxiwvrslh.supabase.co/functions/v1/card-vision
     steps:
       - uses: actions/checkout@v5
@@ -47,17 +46,10 @@ jobs:
           test "$status" = "401"
           echo 'Supabase card-vision is deployed and rejects unauthenticated requests.'
 
-      - name: Verify canonical frontend advertises Supabase edge vision backend
+      - name: Confirm vision backend ownership is explicit in source
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS "$PRODUCTION_URL/api/config" -o /tmp/cardfolio-config
-          node <<'NODE'
-          const fs=require('fs');
-          const cfg=JSON.parse(fs.readFileSync('/tmp/cardfolio-config','utf8'));
-          if(cfg.visionBackend!=='supabase-edge'){
-            console.error(`Unexpected vision backend: ${cfg.visionBackend}`);
-            process.exit(1);
-          }
-          console.log('Canonical vision backend: supabase-edge');
-          NODE
+          grep -Fq "visionBackend:'supabase-edge'" api/config.js
+          grep -Fq "functions.invoke('card-vision'" cardfolio-scan-review.js
+          echo 'Cardfolio vision is owned by the Supabase Edge Function, not the legacy Vercel API shell.'

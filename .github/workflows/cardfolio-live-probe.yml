@@ -1,0 +1,61 @@
+name: Cardfolio live production probe
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+    steps:
+      - name: Probe canonical Vercel surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          config="$(mktemp)"
+          proxy="$(mktemp)"
+          trap 'rm -f "$headers" "$body" "$config" "$proxy"' EXIT
+
+          root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
+          echo "root HTTP: ${root_status:-curl-error}"
+          grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 30 || true
+          echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
+          echo "root title: $(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
+          echo "root current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$body" && echo yes || echo no)"
+          echo 'root script sources:'
+          grep -Eio '<script[^>]+src="[^"]+"' "$body" | head -n 30 || true
+
+          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
+          echo "api/config HTTP: ${config_status:-curl-error}"
+          CONFIG_FILE="$config" node <<'NODE'
+          const fs = require('fs');
+          const raw = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
+          try {
+            const cfg = JSON.parse(raw);
+            console.log('api/config summary:', JSON.stringify({
+              keys: Object.keys(cfg).sort(),
+              configured: cfg.configured,
+              supabaseUrl: cfg.supabaseUrl,
+              publishableKeyType: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+              ebayConfigured: cfg.ebayConfigured
+            }));
+          } catch {
+            console.log(`api/config was not JSON; bytes=${Buffer.byteLength(raw)}`);
+          }
+          NODE
+
+          proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$proxy" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html" || true)"
+          echo "legacy proxy HTTP: ${proxy_status:-curl-error}"
+          echo "legacy proxy bytes: $(wc -c < "$proxy" | tr -d ' ')"
+          echo "legacy proxy title: $(grep -Eio '<title>[^<]*</title>' "$proxy" | head -n 1 || true)"
+          echo "legacy proxy current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$proxy" && echo yes || echo no)"

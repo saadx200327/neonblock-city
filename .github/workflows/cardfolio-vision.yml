@@ -1,4 +1,4 @@
-name: Cardfolio GPT vision gate
+name: Cardfolio Vision Zero gate
 
 on:
   push:
@@ -10,60 +10,85 @@ permissions:
   contents: read
 
 jobs:
-  gpt-vision:
+  vision-zero:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      SUPABASE_FUNCTION_URL: https://tvxwzkununcwxiwvrslh.supabase.co/functions/v1/card-vision
+      EXPERT_REVIEW_URL: https://tvxwzkununcwxiwvrslh.supabase.co/functions/v1/card-expert-review
+      LEGACY_VISION_URL: https://tvxwzkununcwxiwvrslh.supabase.co/functions/v1/card-vision
     steps:
       - uses: actions/checkout@v5
 
-      - name: Verify private image-to-GPT contract
+      - name: Verify zero-cost scan contract
         shell: bash
         run: |
           set -euo pipefail
           node --check cardfolio-scan-review.js
-          test ! -f api/card-vision.js
-          test -f supabase/functions/card-vision/index.ts
-          test -f supabase/migrations/20260907181100_card_vision_rate_limits.sql
+          test -f supabase/functions/card-expert-review/index.ts
+          test -f supabase/migrations/20260907184959_card_expert_review_pipeline.sql
+          test -f supabase/migrations/20260907185038_card_expert_review_claim_cleanup.sql
+          test -f supabase/migrations/20260907185109_card_expert_review_token_expiry_index.sql
 
-          grep -Fq 'createClient' supabase/functions/card-vision/index.ts
-          grep -Fq 'auth.getUser(token)' supabase/functions/card-vision/index.ts
-          grep -Fq 'VAULT_SECRET_NAME = "cardfolio_openai_api_key"' supabase/functions/card-vision/index.ts
-          grep -Fq 'Deno.env.get("OPENAI_API_KEY")' supabase/functions/card-vision/index.ts
-          grep -Fq 'vault.decrypted_secrets' supabase/functions/card-vision/index.ts
-          grep -Fq 'MAX_REQUESTS_PER_HOUR = 120' supabase/functions/card-vision/index.ts
-          grep -Fq 'MAX_REQUESTS_PER_DAY = 500' supabase/functions/card-vision/index.ts
-          grep -Fq 'store: false' supabase/functions/card-vision/index.ts
-          grep -Fq 'detail: "high"' supabase/functions/card-vision/index.ts
-          grep -Fq 'mode === "compare"' supabase/functions/card-vision/index.ts
-          grep -Fq 'Do NOT price the card' supabase/functions/card-vision/index.ts
-          grep -Fq "functions.invoke('card-vision'" cardfolio-scan-review.js
-          grep -Fq 'needs_visual_analysis:false' cardfolio-scan-review.js
-          grep -Fq 'confidence<0.78' cardfolio-scan-review.js
-          grep -Fq "visionBackend:'supabase-edge'" api/config.js
-          echo 'Vision source contract verified.'
+          ! grep -Fq "functions.invoke('card-vision'" cardfolio-scan-review.js
+          ! grep -Fq 'OPENAI_API_KEY' cardfolio-scan-review.js
+          grep -Fq "crypto.subtle.digest('SHA-256'" cardfolio-scan-review.js
+          grep -Fq 'dhash64' cardfolio-scan-review.js
+          grep -Fq "needs_visual_analysis:true" cardfolio-scan-review.js
+          grep -Fq "visual_analysis_status:signedIn?'expert_queue_after_save':'local_only'" cardfolio-scan-review.js
+          grep -Fq "visionBackend:'expert-queue'" api/config.js
+          grep -Fq 'paidVisionFallback:false' api/config.js
+          echo 'Scan-time vision uses local fingerprints and no paid GPT call.'
 
-      - name: Verify production worker enforces app-level authentication
+      - name: Verify private expert queue contract
         shell: bash
         run: |
           set -euo pipefail
-          status="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/cardfolio-vision-body -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"mode":"identify"}' "$SUPABASE_FUNCTION_URL" || true)"
-          echo "Supabase card-vision unauthenticated HTTP: ${status:-curl-error}"
+          f=supabase/migrations/20260907184959_card_expert_review_pipeline.sql
+          grep -Fq 'create table private.card_expert_review_queue' "$f"
+          grep -Fq 'alter table private.card_expert_review_queue enable row level security' "$f"
+          grep -Fq 'revoke all on table private.card_expert_review_queue from public, anon, authenticated' "$f"
+          grep -Fq 'create table private.card_expert_review_tokens' "$f"
+          grep -Fq 'revoke all on table private.card_expert_review_tokens from public, anon, authenticated' "$f"
+          grep -Fq 'private.issue_card_expert_review_token' "$f"
+          grep -Fq 'private.resolve_card_expert_review' "$f"
+          grep -Fq 'card_holdings_queue_expert_review' "$f"
+          grep -Fq 'exact_image_memory_hit' "$f"
+          echo 'Private queue, single-use tokens, resolution memory and trigger are tracked.'
+
+      - name: Verify one-time image handoff source
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=supabase/functions/card-expert-review/index.ts
+          grep -Fq 'private.card_expert_review_tokens' "$f"
+          grep -Fq 't.used_at is null' "$f"
+          grep -Fq 'set used_at=now()' "$f"
+          grep -Fq 't.expires_at > now()' "$f"
+          grep -Fq 'admin.storage.from("card-images").download(ticket.image_path)' "$f"
+          grep -Fq 'Cache-Control' "$f"
+          grep -Fq 'no-store, private, max-age=0' "$f"
+          ! grep -Fq 'Access-Control-Allow-Origin' "$f"
+          ! grep -Fq 'OPENAI_API_KEY' "$f"
+          echo 'Expert image handoff is one-time, private and model-provider independent.'
+
+      - name: Verify production expert worker rejects missing tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/expert-body -w '%{http_code}' "$EXPERT_REVIEW_URL" || true)"
+          echo "card-expert-review without token HTTP: ${status:-curl-error}"
           test "$status" = "401"
           node <<'NODE'
           const fs=require('fs');
-          const body=JSON.parse(fs.readFileSync('/tmp/cardfolio-vision-body','utf8'));
-          if(!/sign in/i.test(String(body.error||'')))process.exit(1);
-          console.log('Production card-vision rejects callers without a real user session.');
+          const body=JSON.parse(fs.readFileSync('/tmp/expert-body','utf8'));
+          if(!/invalid|expired/i.test(String(body.error||'')))process.exit(1);
           NODE
 
-      - name: Confirm backend ownership and fail-closed behavior
+      - name: Keep dormant paid vision locked down
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "visionBackend:'supabase-edge'" api/config.js
-          grep -Fq "functions.invoke('card-vision'" cardfolio-scan-review.js
-          grep -Fq "configured: false" supabase/functions/card-vision/index.ts
-          grep -Fq 'needs_visual_analysis:true' cardfolio-scan-review.js
-          echo 'Cardfolio vision is Supabase-owned and fails closed when model credentials are unavailable.'
+          status="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/legacy-body -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"mode":"identify"}' "$LEGACY_VISION_URL" || true)"
+          echo "Dormant card-vision unauthenticated HTTP: ${status:-curl-error}"
+          test "$status" = "401"
+          echo 'Paid fallback remains server-side and cannot be called anonymously.'

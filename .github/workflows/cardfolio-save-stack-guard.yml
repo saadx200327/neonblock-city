@@ -25,7 +25,9 @@ jobs:
           node --check cardfolio-save-stack-guard.js
           node --check cardfolio-ui-prune.js
           grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-1' index.html
-          grep -Fq 'serializeForDb' cardfolio-save-stack-guard.js
+          grep -Fq 'definitiveSave' cardfolio-save-stack-guard.js
+          grep -Fq 'readPrimitiveForm' cardfolio-save-stack-guard.js
+          grep -Fq "document.addEventListener('click',interceptSave,true)" cardfolio-save-stack-guard.js
           if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-stack-guard.js; then
             echo 'Save stack guard must not call the layered readCardForm chain.' >&2
             exit 1
@@ -53,7 +55,7 @@ jobs:
             fi
 
             guard_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-save-stack-guard.js&rev=$rev-$attempt" || true)"
-            if [ "$guard_status" = "200" ] && grep -Fq 'Cardfolio mobile save stack guard' "$remote" && grep -Fq 'serializeForDb' "$remote"; then
+            if [ "$guard_status" = "200" ] && grep -Fq 'Cardfolio definitive save path for iOS/Safari' "$remote" && grep -Fq 'definitiveSave' "$remote"; then
               guard_ok=1
             fi
 
@@ -64,4 +66,4 @@ jobs:
 
           test "$index_ok" -eq 1
           test "$guard_ok" -eq 1
-          echo 'Live proxy serves the fixed Cardfolio index and cycle-safe save handler.'
+          echo 'Live proxy serves the capture-phase primitive-only Cardfolio save handler.'

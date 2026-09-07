@@ -35,6 +35,9 @@ jobs:
           echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
           echo "root title: $(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
           echo "root current-app marker: $(grep -Fq 'cardfolio-production-guard.js' "$body" && echo yes || echo no)"
+          echo 'root body:'
+          cat "$body"
+          echo
 
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"

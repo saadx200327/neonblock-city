@@ -7,6 +7,7 @@ export default function handler(req,res){
     supabaseUrl,
     supabasePublishableKey,
     ebayConfigured:Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET),
-    visionBackend:'supabase-edge'
+    visionBackend:'expert-queue',
+    paidVisionFallback:false
   });
 }

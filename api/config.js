@@ -6,6 +6,8 @@ export default function handler(req,res){
     configured:Boolean(supabaseUrl&&supabasePublishableKey),
     supabaseUrl,
     supabasePublishableKey,
-    ebayConfigured:Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET)
+    ebayConfigured:Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET),
+    visionConfigured:Boolean(process.env.OPENAI_API_KEY),
+    visionModel:process.env.OPENAI_VISION_MODEL||'gpt-5.6-sol'
   });
 }

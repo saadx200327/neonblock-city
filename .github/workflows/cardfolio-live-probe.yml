@@ -12,7 +12,7 @@ permissions:
 jobs:
   probe-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
       EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
@@ -143,21 +143,28 @@ jobs:
 
           echo 'asset audit:'
           for file in "${assets[@]}"; do
-            : > "$headers"
-            direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
-            direct_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
             direct_match=no
-            if [ "$direct_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
-
-            : > "$headers"
-            proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
-            proxy_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
             proxy_match=no
-            if [ "$proxy_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
+            for asset_attempt in 1 2 3 4 5 6 7 8; do
+              : > "$headers"
+              direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
+              direct_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+              direct_match=no
+              if [ "$direct_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
 
-            printf '%s | direct=%s match=%s type=%s | proxy=%s match=%s type=%s\n' "$file" "${direct_status:-curl-error}" "$direct_match" "${direct_type:-?}" "${proxy_status:-curl-error}" "$proxy_match" "${proxy_type:-?}"
+              : > "$headers"
+              proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
+              proxy_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+              proxy_match=no
+              if [ "$proxy_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
+
+              printf '%s | attempt=%s | direct=%s match=%s type=%s | proxy=%s match=%s type=%s\n' "$file" "$asset_attempt" "${direct_status:-curl-error}" "$direct_match" "${direct_type:-?}" "${proxy_status:-curl-error}" "$proxy_match" "${proxy_type:-?}"
+              if [ "$direct_match" = "yes" ] || [ "$proxy_match" = "yes" ]; then break; fi
+              if [ "$asset_attempt" -lt 8 ]; then sleep 5; fi
+            done
+
             if [ "$direct_match" != "yes" ] && [ "$proxy_match" != "yes" ]; then
-              echo "Production asset mismatch: $file" >&2
+              echo "Production asset mismatch after bounded propagation retries: $file" >&2
               exit 1
             fi
           done

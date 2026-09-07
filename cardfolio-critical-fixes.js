@@ -163,6 +163,8 @@ function authState(message,isError=false){
 }
 function ensureGoogleButton(){
   const form=document.getElementById('authForm');if(!form)return;
+  // Older UI layers inserted a second button with a different OAuth callback.
+  document.getElementById('googleSignInBtn')?.remove();
   let button=document.getElementById('googleLoginBtn');
   if(button){
     const clone=button.cloneNode(true);button.replaceWith(clone);button=clone;
@@ -175,6 +177,7 @@ function ensureGoogleButton(){
 }
 async function launchGoogleAuth(){
   const button=document.getElementById('googleLoginBtn');
+  if(button?.disabled)return;
   if(!state.supabase){authState('Cloud sign-in is not ready. Reload Cardfolio and try again.',true);return;}
   if(button)button.disabled=true;authState('Opening Google sign-in…');
   try{

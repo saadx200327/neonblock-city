@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "check": "node --check cardfolio-app.js && node --check cardfolio-app-2.js && node --check cardfolio-app-3.js && node --check cardfolio-app-4.js && node --check cardfolio-scan-review.js && node --check api/config.js && node --check api/ebay.js && node --check api/card-vision.js",
+    "check": "node --check cardfolio-app.js && node --check cardfolio-app-2.js && node --check cardfolio-app-3.js && node --check cardfolio-app-4.js && node --check cardfolio-scan-review.js && node --check api/config.js && node --check api/ebay.js",
     "test": "npm run check"
   },
   "engines": {

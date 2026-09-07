@@ -178,7 +178,11 @@ async function launchGoogleAuth(){
   if(!state.supabase){authState('Cloud sign-in is not ready. Reload Cardfolio and try again.',true);return;}
   if(button)button.disabled=true;authState('Opening Google sign-in…');
   try{
-    const redirectTo=`${location.origin}/`;
+    // The current Vercel shell redirects / without preserving OAuth fragments.
+    // Return directly to the proxied document, keeping only its known routing query.
+    const redirectTo=location.pathname==='/api/proxy'
+      ? `${location.origin}/api/proxy?path=index.html`
+      : `${location.origin}/`;
     const {data,error}=await state.supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo,skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}});
     if(error)throw error;
     if(!data?.url)throw new Error('Google sign-in did not return an authorization URL.');

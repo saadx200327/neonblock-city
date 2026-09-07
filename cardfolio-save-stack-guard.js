@@ -1,203 +1,26 @@
-/* Cardfolio mobile save stack guard.
-   This final interaction layer intentionally bypasses the legacy readCardForm/toDb
-   wrapper chain when saving a holding. Safari can otherwise recurse through layered
-   serializers and surface "Maximum call stack size exceeded". */
+/* Cardfolio definitive save path for iOS/Safari.
+   Runs in capture phase and never calls the legacy form/serializer save chain. */
 (function(){
 'use strict';
 
 let saving=false;
-
-const text=(v='')=>String(v??'').trim().replace(/\s+/g,' ');
-const finite=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
+const text=v=>String(v??'').trim().replace(/\s+/g,' ');
+const value=id=>text(document.getElementById(id)?.value||'');
+const checked=id=>!!document.getElementById(id)?.checked;
 const now=()=>new Date().toISOString();
-const makeId=()=>globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-function value(id){return text(document.getElementById(id)?.value||'');}
-function checked(id){return !!document.getElementById(id)?.checked;}
-
-function safeJsonObject(input,maxDepth=6){
-  const seen=new WeakSet();
-  const walk=(v,depth)=>{
-    if(v===null)return null;
-    const kind=typeof v;
-    if(kind==='string'||kind==='boolean')return v;
-    if(kind==='number')return Number.isFinite(v)?v:null;
-    if(kind==='bigint')return String(v);
-    if(kind==='undefined'||kind==='function'||kind==='symbol')return undefined;
-    if(v instanceof Date)return Number.isNaN(v.getTime())?null:v.toISOString();
-    if(kind!=='object')return String(v);
-    if(depth>=maxDepth)return null;
-    if(seen.has(v))return undefined;
-    seen.add(v);
-    try{
-      if(Array.isArray(v)){
-        const out=[];
-        for(const item of v.slice(0,100)){
-          const cleaned=walk(item,depth+1);
-          out.push(cleaned===undefined?null:cleaned);
-        }
-        return out;
-      }
-      const out={};
-      let count=0;
-      for(const [key,item] of Object.entries(v)){
-        if(count++>=100)break;
-        const cleaned=walk(item,depth+1);
-        if(cleaned!==undefined)out[key]=cleaned;
-      }
-      return out;
-    }catch{
-      return {};
-    }finally{
-      seen.delete(v);
-    }
-  };
-  const result=walk(input,0);
-  return result&&typeof result==='object'&&!Array.isArray(result)?result:{};
+function uuid(){
+  if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
+  const bytes=new Uint8Array(16);globalThis.crypto?.getRandomValues?.(bytes);
+  bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+  const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
+function numOrNull(v){return v!==''&&Number.isFinite(Number(v))?Number(v):null}
+function intAtLeastOne(v){const n=Math.floor(Number(v||1));return Number.isFinite(n)&&n>0?n:1}
+function validUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(v))}
 
-function displayNameFor(h){
-  const entered=value('displayName');
-  if(entered)return entered;
-  return [h.subject,h.year,h.brand||h.manufacturer,h.set_name,h.card_number?`#${h.card_number}`:'',h.parallel]
-    .filter(Boolean).join(' · ');
-}
-
-function readFormDirect(){
-  const quantityRaw=value('quantity');
-  const costRaw=value('costBasis');
-  const manualRaw=value('manualValue');
-  const variation=value('variation');
-  const language=value('cardLanguage')||value('language');
-  const h={
-    id:value('cardId')||makeId(),
-    category:value('category')||'Other',
-    subject:value('subject'),
-    year:value('year'),
-    manufacturer:value('manufacturer'),
-    brand:value('brand'),
-    set_name:value('setName'),
-    subset:value('subset'),
-    card_number:value('cardNumber'),
-    parallel:value('parallel'),
-    variant_name:variation,
-    serial_number:value('serialNumber'),
-    language,
-    edition:value('edition'),
-    team:value('team'),
-    league:value('league'),
-    condition:value('condition')||'Raw — unknown',
-    quantity:Number(quantityRaw||1),
-    cost_basis:costRaw===''?'':Number(costRaw),
-    acquisition_source:value('acquisitionSource'),
-    acquisition_date:value('acquisitionDate')||null,
-    manual_value:manualRaw===''?'':Number(manualRaw),
-    grading_company:value('gradingCompany'),
-    grade:value('grade'),
-    cert_number:value('certNumber'),
-    rookie:checked('rookie'),
-    autograph:checked('autograph'),
-    relic:checked('relic'),
-    notes:value('notes'),
-    updated_at:now()
-  };
-  h.card_type=h.autograph&&h.relic?'autograph_relic':h.autograph?'autograph':h.relic?'relic':(h.parallel||h.variant_name||h.serial_number)?'parallel_or_variation':'base';
-  h.display_name=displayNameFor(h);
-  h.metadata={
-    subset:h.subset||null,
-    variation:h.variant_name||null,
-    variant_name:h.variant_name||null,
-    card_type:h.card_type||null,
-    language:h.language||null,
-    edition:h.edition||null
-  };
-  return h;
-}
-
-function systemFields(source={}){
-  return {
-    image_path:source.image_path||null,
-    image_url:source.image_url||'',
-    tcgdex_card_id:source.tcgdex_card_id||null,
-    market_value:source.market_value??null,
-    valuation_source:source.valuation_source||'',
-    valuation_observed_at:source.valuation_observed_at||null,
-    external_ids:safeJsonObject(source.external_ids),
-    metadata:safeJsonObject(source.metadata),
-    canonical_card_id:source.canonical_card_id||null,
-    valuation_status:source.valuation_status||'pending_price',
-    display_name:source.display_name||''
-  };
-}
-
-function identity(h={}){
-  const meta=safeJsonObject(h.metadata);
-  return JSON.stringify([
-    text(h.category||'Other').toLowerCase(),text(h.subject).toLowerCase(),text(h.year).toLowerCase(),
-    text(h.manufacturer).toLowerCase(),text(h.brand).toLowerCase(),text(h.set_name).toLowerCase(),
-    text(h.subset||meta.subset).toLowerCase(),text(h.card_number).toLowerCase(),text(h.parallel).toLowerCase(),
-    text(h.variant_name||meta.variant_name||meta.variation).toLowerCase(),!!h.autograph,!!h.relic,
-    text(h.serial_number).split('/')[1]||'',text(h.grading_company).toLowerCase(),text(h.grade).toLowerCase(),
-    text(h.language||meta.language).toLowerCase(),text(h.edition||meta.edition).toLowerCase()
-  ]);
-}
-
-function canonicalPayload(h={}){
-  const meta=safeJsonObject(h.metadata);
-  return {
-    category:h.category||'Other',subject:text(h.subject),year:text(h.year),manufacturer:text(h.manufacturer),brand:text(h.brand),
-    set_name:text(h.set_name),subset:text(h.subset||meta.subset),card_number:text(h.card_number),parallel:text(h.parallel),
-    variant_name:text(h.variant_name||meta.variant_name||meta.variation),card_type:text(h.card_type||meta.card_type),
-    team:text(h.team),league:text(h.league),rookie:!!h.rookie,autograph:!!h.autograph,relic:!!h.relic,
-    serial_number:text(h.serial_number),grading_company:text(h.grading_company),grade:text(h.grade),
-    language:text(h.language||meta.language),edition:text(h.edition||meta.edition)
-  };
-}
-
-function readiness(h={}){
-  const missing=[];
-  if(!text(h.subject))missing.push('player/character');
-  if(!text(h.year))missing.push('year');
-  if(!text(h.card_number))missing.push('card number');
-  if(!text(h.set_name)&&!text(h.brand)&&!text(h.manufacturer))missing.push('set/product');
-  const company=text(h.grading_company),grade=text(h.grade);
-  if((company&&!grade)||(!company&&grade))missing.push(company?'grade':'grading company');
-  return {ready:missing.length===0,missing};
-}
-
-function pendingMetadata(metadata={},missing=[]){
-  const detail=missing.length?`Missing ${missing.join(', ')}.`:'Exact identity is still ambiguous.';
-  return {
-    ...safeJsonObject(metadata),
-    needs_canonical_link:true,
-    resolution_context:`Canonical identity pending. ${detail} Cardfolio will not create a shared market asset until exact identity is supported.`,
-    resolution_last_attempt_at:now()
-  };
-}
-
-const DB_FIELDS=[
-  'id','category','subject','display_name','year','manufacturer','brand','set_name','subset','card_number','parallel','variant_name','card_type',
-  'serial_number','language','edition','team','league','condition','quantity','cost_basis','acquisition_source','acquisition_date','manual_value',
-  'grading_company','grade','cert_number','rookie','autograph','relic','notes','image_path','tcgdex_card_id','market_value','valuation_source',
-  'valuation_observed_at','external_ids','metadata','canonical_card_id','valuation_status'
-];
-
-function serializeForDb(h){
-  const out={};
-  for(const key of DB_FIELDS){
-    if(key==='external_ids'||key==='metadata')out[key]=safeJsonObject(h[key]);
-    else out[key]=h[key]??null;
-  }
-  for(const key of ['cost_basis','manual_value','market_value'])if(out[key]==='')out[key]=null;
-  for(const key of ['acquisition_date','valuation_observed_at'])if(out[key]==='')out[key]=null;
-  out.quantity=Number.isFinite(Number(out.quantity))?Number(out.quantity):1;
-  out.rookie=!!out.rookie;out.autograph=!!out.autograph;out.relic=!!out.relic;
-  out.user_id=state.user.id;
-  out.updated_at=now();
-  return out;
-}
-
-function saveMessage(message,isError=false){
+function saveState(message,isError=false){
   let box=document.getElementById('cardSaveState');
   if(!box){
     box=document.createElement('div');box.id='cardSaveState';box.className='inline-note';box.setAttribute('role','status');box.setAttribute('aria-live','polite');
@@ -205,123 +28,163 @@ function saveMessage(message,isError=false){
   }
   box.textContent=message||'';box.classList.toggle('bad',!!isError);
 }
-
 function busy(on){
-  const button=document.getElementById('saveCardBtn');if(!button)return;
-  button.disabled=on;button.setAttribute('aria-busy',on?'true':'false');button.textContent=on?'Saving…':'Save holding';
-  if(!on)button.removeAttribute('aria-busy');
+  const b=document.getElementById('saveCardBtn');if(!b)return;
+  b.disabled=on;b.textContent=on?'Saving…':'Save holding';b.setAttribute('aria-busy',on?'true':'false');
+  if(!on)b.removeAttribute('aria-busy');
+}
+function displayName(h){return [h.subject,h.year,h.brand||h.manufacturer,h.set_name,h.card_number?`#${h.card_number}`:'',h.parallel].filter(Boolean).join(' · ')}
+function identity(h={}){
+  return [h.category,h.subject,h.year,h.manufacturer,h.brand,h.set_name,h.subset,h.card_number,h.parallel,h.variant_name,h.serial_number,h.grading_company,h.grade,h.language,h.edition,!!h.autograph,!!h.relic]
+    .map(v=>typeof v==='boolean'?v:text(v).toLowerCase()).join('|');
 }
 
-async function uploadPhoto(file){
-  if(!file||!state.supabase||!state.user)return null;
+function readPrimitiveForm(){
+  const idValue=value('cardId');
+  const h={
+    id:validUuid(idValue)?idValue:uuid(),
+    category:value('category')||'Other',
+    subject:value('subject'),
+    year:value('year')||null,
+    manufacturer:value('manufacturer')||null,
+    brand:value('brand')||null,
+    set_name:value('setName')||null,
+    subset:value('subset')||null,
+    card_number:value('cardNumber')||null,
+    parallel:value('parallel')||null,
+    variant_name:value('variation')||null,
+    serial_number:value('serialNumber')||null,
+    language:value('cardLanguage')||null,
+    edition:value('edition')||null,
+    team:value('team')||null,
+    league:value('league')||null,
+    condition:value('condition')||'Raw — unknown',
+    quantity:intAtLeastOne(value('quantity')),
+    cost_basis:numOrNull(value('costBasis')),
+    acquisition_source:value('acquisitionSource')||null,
+    acquisition_date:value('acquisitionDate')||null,
+    manual_value:numOrNull(value('manualValue')),
+    grading_company:value('gradingCompany')||null,
+    grade:value('grade')||null,
+    cert_number:value('certNumber')||null,
+    rookie:checked('rookie'),
+    autograph:checked('autograph'),
+    relic:checked('relic'),
+    notes:value('notes')||null
+  };
+  h.card_type=h.autograph&&h.relic?'autograph_relic':h.autograph?'autograph':h.relic?'relic':(h.parallel||h.variant_name||h.serial_number)?'parallel_or_variation':'base';
+  h.display_name=displayName(h);
+  return h;
+}
+
+function plainMetadata(h){
+  const confidence=typeof state!=='undefined'&&Number.isFinite(Number(state.scan?.confidence))?Number(state.scan.confidence):null;
+  const ocr=typeof state!=='undefined'&&state.scan?.text?String(state.scan.text).slice(0,5000):null;
+  return {
+    subset:h.subset,
+    variation:h.variant_name,
+    variant_name:h.variant_name,
+    card_type:h.card_type,
+    language:h.language,
+    edition:h.edition,
+    scan_confidence:confidence,
+    scan_ocr:ocr,
+    needs_canonical_link:true,
+    resolution_context:'Saved safely. Exact catalog identity and pricing can be resolved after intake.',
+    resolution_last_attempt_at:now()
+  };
+}
+function clientHolding(row,imageUrl=''){
+  return {...row,image_url:imageUrl||'',cost_basis:row.cost_basis??'',manual_value:row.manual_value??'',market_value:row.market_value??null};
+}
+function sanitizeExisting(h={}){
+  const out={};
+  const keys=['id','category','subject','display_name','year','manufacturer','brand','set_name','subset','card_number','parallel','variant_name','card_type','serial_number','language','edition','team','league','condition','quantity','cost_basis','acquisition_source','acquisition_date','manual_value','grading_company','grade','cert_number','rookie','autograph','relic','notes','image_path','image_url','tcgdex_card_id','market_value','valuation_source','valuation_observed_at','canonical_card_id','valuation_status','created_at','updated_at'];
+  for(const k of keys){const v=h?.[k];if(v===null||['string','number','boolean'].includes(typeof v))out[k]=v;}
+  out.external_ids={};out.metadata={};return out;
+}
+
+async function uploadPhotoAfterSave(row){
   try{
-    let blob=file;
-    if(typeof globalThis.compressImage==='function')blob=await globalThis.compressImage(file,1500,.84)||file;
-    const path=`${state.user.id}/${makeId()}.jpg`;
-    const {error}=await state.supabase.storage.from('card-images').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+    if(typeof state==='undefined'||!state.supabase||!state.user)return;
+    const file=state.scan?.croppedFile||state.scan?.file||null;if(!file)return;
+    const ext=(file.name?.split('.').pop()||'jpg').replace(/[^a-z0-9]/gi,'').slice(0,8)||'jpg';
+    const path=`${state.user.id}/${uuid()}.${ext}`;
+    const {error}=await state.supabase.storage.from('card-images').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});
     if(error)throw error;
-    return path;
-  }catch(err){
-    console.warn('Cardfolio photo upload deferred',err);
-    return null;
-  }
+    const {error:updateError}=await state.supabase.from('card_holdings').update({image_path:path,updated_at:now()}).eq('id',row.id).eq('user_id',state.user.id);
+    if(updateError)throw updateError;
+    const local=(state.holdings||[]).find(x=>x.id===row.id);if(local)local.image_path=path;
+  }catch(err){console.warn('Cardfolio photo upload deferred',err)}
 }
 
-async function saveDirect(){
+async function definitiveSave(){
   if(saving)return;
-  saving=true;busy(true);saveMessage('Saving your card…');
-  let uploadedPath=null;
-  let stage='reading the form';
+  saving=true;busy(true);saveState('Saving your card…');
   try{
-    const form=readFormDirect();
+    if(typeof state==='undefined')throw new Error('Cardfolio is still loading. Reload and try again.');
+    const form=readPrimitiveForm();
     if(!form.subject)throw new Error('Player or character name is required.');
-    if(!Number.isFinite(form.quantity)||form.quantity<1)throw new Error('Quantity must be at least 1.');
-
-    stage='preparing the holding';
-    const existing=(state.holdings||[]).find(item=>item.id===form.id)||null;
-    const scanFields=!existing&&state.scan?.fields&&typeof state.scan.fields==='object'?state.scan.fields:{};
-    const base=systemFields(existing||scanFields);
-    const next={...base,...form};
-    next.metadata={...safeJsonObject(base.metadata),...safeJsonObject(form.metadata),scan_confidence:state.scan?.confidence??base.metadata?.scan_confidence??null};
-    if(state.scan?.text)next.metadata.scan_ocr=String(state.scan.text).slice(0,5000);
-    if(!next.image_url&&state.scan?.imageDataUrl)next.image_url=state.scan.imageDataUrl;
-
-    const identityChanged=!existing||identity(existing)!==identity(next);
-    if(identityChanged){
-      next.canonical_card_id=null;next.market_value=null;next.valuation_source='';next.valuation_observed_at=null;next.valuation_status='pending_price';
-    }else{
-      next.canonical_card_id=existing?.canonical_card_id||next.canonical_card_id||null;
-      next.valuation_status=existing?.valuation_status||next.valuation_status||'pending_price';
-    }
+    const existing=(state.holdings||[]).find(x=>x?.id===form.id)||null;
+    const sameIdentity=!!existing&&identity(existing)===identity(form);
+    const row={
+      ...form,
+      image_path:existing?.image_path||null,
+      tcgdex_card_id:sameIdentity?(existing?.tcgdex_card_id||null):null,
+      market_value:sameIdentity&&Number.isFinite(Number(existing?.market_value))?Number(existing.market_value):null,
+      valuation_source:sameIdentity?(text(existing?.valuation_source)||null):null,
+      valuation_observed_at:sameIdentity?(existing?.valuation_observed_at||null):null,
+      external_ids:{},
+      metadata:plainMetadata(form),
+      canonical_card_id:sameIdentity&&validUuid(existing?.canonical_card_id)?existing.canonical_card_id:null,
+      valuation_status:sameIdentity?(text(existing?.valuation_status)||'pending_price'):'pending_price',
+      updated_at:now()
+    };
 
     if(state.backend==='cloud'&&state.user&&state.supabase){
-      stage='uploading the card image';
-      const photoFile=state.scan?.croppedFile||state.scan?.file||null;
-      if(!next.image_path&&photoFile){uploadedPath=await uploadPhoto(photoFile);if(uploadedPath)next.image_path=uploadedPath;}
-
-      stage='resolving the exact card';
-      if(identityChanged||!next.canonical_card_id){
-        const ready=readiness(next);
-        if(ready.ready){
-          try{
-            const {data,error}=await state.supabase.rpc('resolve_canonical_card',{p_identity:canonicalPayload(next)});
-            if(error)throw error;
-            if(data){
-              next.canonical_card_id=data;
-              next.metadata={...safeJsonObject(next.metadata),needs_canonical_link:false,resolution_context:null,resolution_last_attempt_at:now()};
-            }
-          }catch(err){
-            console.warn('Canonical identity will be retried by the research loop',err);
-            next.canonical_card_id=null;next.valuation_status='pending_price';next.metadata=pendingMetadata(next.metadata,[]);
-          }
-        }else{
-          next.canonical_card_id=null;next.valuation_status='pending_price';next.metadata=pendingMetadata(next.metadata,ready.missing);
-        }
-      }
-
-      stage='serializing the holding';
-      const row=serializeForDb(next);
-      stage='saving to the cloud';
-      const {error}=await state.supabase.from('card_holdings').upsert(row);
+      row.user_id=state.user.id;
+      const {error}=await state.supabase.from('card_holdings').upsert(row,{onConflict:'id'});
       if(error)throw error;
-      stage='refreshing the portfolio';
-      try{if(typeof globalThis.syncCloud==='function')await globalThis.syncCloud();}catch(err){console.warn('Post-save cloud refresh deferred',err);}
+      const imageUrl=existing?.image_url||state.scan?.imageDataUrl||'';
+      const next=clientHolding(row,imageUrl);
+      const i=(state.holdings||[]).findIndex(x=>x?.id===row.id);
+      if(i>=0)state.holdings[i]=next;else state.holdings.unshift(next);
+      void uploadPhotoAfterSave(row);
     }else{
-      stage='saving to Local Vault';
-      const ready=readiness(next);
-      next.metadata=pendingMetadata(next.metadata,ready.ready?[]:ready.missing);
-      next.external_ids=safeJsonObject(next.external_ids);
-      if(existing)Object.assign(existing,next);else state.holdings.unshift(next);
-      if(typeof globalThis.saveLocal!=='function')throw new Error('Local Vault is not ready. Reload and try again.');
-      globalThis.saveLocal();
+      const next=clientHolding(row,existing?.image_url||state.scan?.imageDataUrl||'');
+      const safe=(state.holdings||[]).map(sanitizeExisting);
+      const i=safe.findIndex(x=>x.id===row.id);if(i>=0)safe[i]=next;else safe.unshift(next);
+      state.holdings=safe;
+      localStorage.setItem('cardfolio.holdings.v1',JSON.stringify(safe));
     }
 
     document.getElementById('cardDialog')?.close();
     state.scan=null;
-    globalThis.toast?.(existing?'Holding updated':'Card added · Pending Price');
-    globalThis.setView?.('portfolio');
+    if(typeof toast==='function')toast(existing?'Holding updated':'Card added · Pending Price');
+    if(typeof setView==='function')setView('portfolio');
   }catch(err){
-    console.error(`Cardfolio direct save failed while ${stage}`,err);
-    if(uploadedPath&&state.supabase){try{await state.supabase.storage.from('card-images').remove([uploadedPath]);}catch{}}
+    console.error('Cardfolio definitive save failed',err);
     const raw=text(err?.message);
-    const stackProblem=err instanceof RangeError||/maximum call stack|too much recursion/i.test(raw);
-    const message=stackProblem?'Cardfolio reset the save path after a browser recursion error. Reopen this card and save again.':(raw||'Could not save this card. Please try again.');
-    saveMessage(message,true);
-    globalThis.toast?.(`Save failed · ${message}`);
+    const recursion=err instanceof RangeError||/maximum call stack|too much recursion/i.test(raw);
+    saveState(recursion?'Save recursion was blocked. Reload once and retry; the legacy handler will not run.':(raw||'Could not save this card. Please try again.'),true);
   }finally{
     saving=false;busy(false);
   }
 }
 
-function install(){
-  const current=document.getElementById('saveCardBtn');
-  if(!current||current.dataset.cardfolioStackGuard==='1')return;
-  const button=current.cloneNode(true);
-  button.dataset.cardfolioStackGuard='1';
-  current.replaceWith(button);
-  button.addEventListener('click',saveDirect);
+function interceptSave(event){
+  const button=event.target?.closest?.('#saveCardBtn');if(!button)return;
+  event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+  void definitiveSave();
+}
+function interceptSubmit(event){
+  const form=event.target;if(!(form instanceof HTMLFormElement)||form.id!=='cardForm')return;
+  event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+  void definitiveSave();
 }
 
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});
-else install();
+// Capture phase makes this independent of whichever older script last replaced the button.
+document.addEventListener('click',interceptSave,true);
+document.addEventListener('submit',interceptSubmit,true);
+window.cardfolioDefinitiveSave=definitiveSave;
 })();

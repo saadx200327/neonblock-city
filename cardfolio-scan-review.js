@@ -100,24 +100,20 @@
     }
 
     try{
-      const {data:{session}}=await state.supabase.auth.getSession();
-      const token=session?.access_token;
-      if(!token)throw new Error('Your Cardfolio session needs to be refreshed.');
-
-      const r=await fetch('/api/card-vision',{
-        method:'POST',
-        headers:{'content-type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({
+      const {data,error}=await state.supabase.functions.invoke('card-vision',{
+        body:{
           mode:'identify',
           imageDataUrl:state.scan.imageDataUrl,
           ocrText:state.scan.text||'',
           knownFields:state.scan.fields||{}
-        })
+        }
       });
-      const data=await r.json().catch(()=>({}));
-      if(!r.ok){
-        state.scan.visionStatus=data?.configured===false?'not_configured':'error';
-        state.scan.visionError=String(data?.error||'GPT visual analysis is unavailable right now.');
+      if(error){
+        let detail={};
+        try{if(error.context?.json)detail=await error.context.json();}catch{}
+        const configured=detail?.configured;
+        state.scan.visionStatus=configured===false?'not_configured':'error';
+        state.scan.visionError=String(detail?.error||error.message||'GPT visual analysis is unavailable right now.');
         state.scan.fields=state.scan.fields||{};
         state.scan.fields.metadata={
           ...(state.scan.fields.metadata||{}),
@@ -128,6 +124,7 @@
         renderVisionReview();
         return null;
       }
+      if(!data?.analysis)throw new Error('GPT visual analysis returned no structured card evidence.');
 
       state.scan.visionStatus='ready';
       state.scan.visualAnalysis=data.analysis||null;

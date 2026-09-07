@@ -18,16 +18,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: Validate critical patch syntax
         run: |
           node --check cardfolio-critical-fixes.js
           node --check cardfolio-exact-identity-client.js
           node --check cardfolio-production-guard.js
-      - name: Validate Vercel production wiring
+
+      - name: Validate Vercel source wiring
         shell: bash
         run: |
           set -euo pipefail
           test -f vercel.json
+          test -f api/config.js
+          test -f api/ebay.js
           grep -Fq 'Strict-Transport-Security' vercel.json
           grep -Fq 'X-Content-Type-Options' vercel.json
           grep -Fq 'Referrer-Policy' vercel.json
@@ -43,7 +47,59 @@ jobs:
           grep -Fq 'skipBrowserRedirect:true' cardfolio-critical-fixes.js
           grep -Fq "provider:'google'" cardfolio-critical-fixes.js
           grep -Fq 'Save failed' cardfolio-critical-fixes.js
-          grep -Fq 'subset:' cardfolio-exact-identity-client.js
-          grep -Fq 'variation:' cardfolio-exact-identity-client.js
-          grep -Fq 'language:' cardfolio-exact-identity-client.js
-          grep -Fq 'edition:' cardfolio-exact-identity-client.js
+          grep -Fq "'subset'" cardfolio-exact-identity-client.js
+          grep -Fq "'variant_name'" cardfolio-exact-identity-client.js
+          grep -Fq "'language'" cardfolio-exact-identity-client.js
+          grep -Fq "'edition'" cardfolio-exact-identity-client.js
+          grep -Fq 'tvxwzkununcwxiwvrslh.supabase.co' api/config.js
+          if grep -Ein 'service[_-]?role|SUPABASE_SERVICE_ROLE' index.html cardfolio-*.js cardfolio*.css cardfolio-manifest.webmanifest; then
+            echo 'Privileged Supabase credential reference found in browser-delivered files.' >&2
+            exit 1
+          fi
+
+      - name: Validate live Vercel production
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          config="$(mktemp)"
+          trap 'rm -f "$headers" "$body" "$config"' EXIT
+
+          ready=0
+          for attempt in $(seq 1 12); do
+            : > "$headers"
+            : > "$body"
+            status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
+            if [ "$status" = "200" ] && grep -Fq '<title>Cardfolio</title>' "$body" && grep -Fiq '^x-vercel-id:' "$headers"; then
+              ready=1
+              break
+            fi
+            echo "Production not ready on attempt $attempt (HTTP ${status:-curl-error}); retrying..."
+            sleep 10
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo 'Canonical Vercel production URL did not become a READY Cardfolio deployment.' >&2
+            exit 1
+          fi
+
+          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
+          test "$config_status" = "200"
+          CONFIG_FILE="$config" node <<'NODE'
+          const fs = require('fs');
+          const raw = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
+          if (/service[_-]?role|SUPABASE_SERVICE_ROLE/i.test(raw)) {
+            throw new Error('Privileged Supabase credential reference exposed by /api/config');
+          }
+          const cfg = JSON.parse(raw);
+          if (cfg.supabaseUrl !== 'https://tvxwzkununcwxiwvrslh.supabase.co') {
+            throw new Error(`Unexpected Supabase project URL: ${cfg.supabaseUrl}`);
+          }
+          if (typeof cfg.supabaseKey !== 'string' || !cfg.supabaseKey.startsWith('sb_publishable_')) {
+            throw new Error('Production /api/config is not returning the expected publishable Supabase key type.');
+          }
+          NODE

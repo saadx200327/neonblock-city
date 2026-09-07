@@ -12,7 +12,7 @@ permissions:
 jobs:
   probe-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 5
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
       EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
@@ -27,7 +27,9 @@ jobs:
           body="$(mktemp)"
           config="$(mktemp)"
           remote="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$config" "$remote"' EXIT
+          auth_settings="$(mktemp)"
+          oauth_headers="$(mktemp)"
+          trap 'rm -f "$headers" "$body" "$config" "$remote" "$auth_settings" "$oauth_headers"' EXIT
 
           root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
@@ -59,6 +61,58 @@ jobs:
           console.log('api/config verification:', JSON.stringify(valid));
           if (!Object.values(valid).every(Boolean)) process.exit(1);
           NODE
+
+          mapfile -t public_auth < <(CONFIG_FILE="$config" node <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8'));
+          console.log(cfg.supabaseUrl || '');
+          console.log(cfg.supabasePublishableKey || '');
+          NODE
+          )
+          supabase_url="${public_auth[0]:-}"
+          publishable_key="${public_auth[1]:-}"
+          test "$supabase_url" = "$EXPECTED_SUPABASE_URL"
+          test -n "$publishable_key"
+
+          auth_settings_status="$(curl -sS --connect-timeout 8 --max-time 20 \
+            -H "apikey: $publishable_key" \
+            -o "$auth_settings" -w '%{http_code}' \
+            "$supabase_url/auth/v1/settings" || true)"
+          echo "Supabase auth settings HTTP: ${auth_settings_status:-curl-error}"
+          test "$auth_settings_status" = "200"
+          AUTH_SETTINGS_FILE="$auth_settings" node <<'NODE'
+          const fs = require('fs');
+          let settings;
+          try {
+            settings = JSON.parse(fs.readFileSync(process.env.AUTH_SETTINGS_FILE, 'utf8'));
+          } catch {
+            console.error('Supabase auth settings must be valid JSON');
+            process.exit(1);
+          }
+          const googleEnabled = settings?.external?.google === true;
+          console.log(`Google provider enabled: ${googleEnabled}`);
+          if (!googleEnabled) process.exit(1);
+          NODE
+
+          oauth_target="$PRODUCTION_URL/api/proxy?path=index.html"
+          : > "$oauth_headers"
+          oauth_status="$(curl -sS --connect-timeout 8 --max-time 20 --max-redirs 0 \
+            -H "apikey: $publishable_key" \
+            -D "$oauth_headers" -o /dev/null -w '%{http_code}' \
+            --get --data-urlencode 'provider=google' --data-urlencode "redirect_to=$oauth_target" \
+            "$supabase_url/auth/v1/authorize" || true)"
+          echo "Google OAuth launch HTTP: ${oauth_status:-curl-error}"
+          test "$oauth_status" = "302"
+          oauth_location="$(grep -i '^location:' "$oauth_headers" | tail -n1 | sed -E 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
+          case "$oauth_location" in
+            https://accounts.google.com/*|https://accounts.googleusercontent.com/*)
+              echo 'Google OAuth provider launch: verified'
+              ;;
+            *)
+              echo 'Google OAuth did not redirect to a Google authorization endpoint.' >&2
+              exit 1
+              ;;
+          esac
 
           assets=(
             cardfolio-manifest.webmanifest

@@ -51,6 +51,13 @@ async function saveCardFromForm(){
   const formHolding=readCardForm();
   if(!formHolding.subject){toast('Player or character name is required');return}
   const existing=state.holdings.find(x=>x.id===formHolding.id);
+
+  // Vision Zero is local-only at scan time. Await its fingerprint before serializing
+  // the holding so a very fast Save tap cannot bypass expert-queue dedupe metadata.
+  if(!existing&&state.scan?.imageDataUrl&&typeof window.cardfolioAnalyzeScanWithVision==='function'&&!state.scan.localVisualSignature){
+    try{await window.cardfolioAnalyzeScanWithVision()}catch{}
+  }
+
   const scanFields=!existing&&state.scan?.fields?state.scan.fields:{};
   const nextHolding={...holdingSystemFields(existing||scanFields),...(existing?{created_at:existing.created_at}:{}),...formHolding};
   if(!existing)nextHolding.created_at=nowIso();

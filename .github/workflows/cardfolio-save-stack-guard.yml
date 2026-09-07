@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           node --check cardfolio-save-stack-guard.js
           node --check cardfolio-ui-prune.js
-          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-1' index.html
+          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-2' index.html
           grep -Fq 'definitiveSave' cardfolio-save-stack-guard.js
           grep -Fq 'readPrimitiveForm' cardfolio-save-stack-guard.js
           grep -Fq "document.addEventListener('click',interceptSave,true)" cardfolio-save-stack-guard.js
@@ -50,7 +50,7 @@ jobs:
           guard_ok=0
           for attempt in $(seq 1 12); do
             index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&rev=$rev-$attempt" || true)"
-            if [ "$index_status" = "200" ] && grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-1' "$remote"; then
+            if [ "$index_status" = "200" ] && grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-2' "$remote"; then
               index_ok=1
             fi
 
@@ -66,4 +66,4 @@ jobs:
 
           test "$index_ok" -eq 1
           test "$guard_ok" -eq 1
-          echo 'Live proxy serves the capture-phase primitive-only Cardfolio save handler.'
+          echo 'Live proxy serves the cache-busted capture-phase primitive-only Cardfolio save handler.'

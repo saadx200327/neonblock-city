@@ -1,0 +1,59 @@
+name: Cardfolio save stack guard
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-save-stack-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate save guard source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check cardfolio-save-stack-guard.js
+          node --check cardfolio-ui-prune.js
+          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js' cardfolio-ui-prune.js
+          grep -Fq 'serializeForDb' cardfolio-save-stack-guard.js
+          if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-stack-guard.js; then
+            echo 'Save stack guard must not call the layered readCardForm chain.' >&2
+            exit 1
+          fi
+          if grep -Eq '(^|[^A-Za-z])toDb\(' cardfolio-save-stack-guard.js; then
+            echo 'Save stack guard must not call the layered toDb chain.' >&2
+            exit 1
+          fi
+
+      - name: Verify guard reached production
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(mktemp)"
+          trap 'rm -f "$remote"' EXIT
+          for file in cardfolio-ui-prune.js cardfolio-save-stack-guard.js; do
+            matched=0
+            for attempt in $(seq 1 8); do
+              status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
+              if [ "$status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then
+                matched=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "$matched" -ne 1 ]; then
+              echo "Production proxy did not serve current $file." >&2
+              exit 1
+            fi
+          done

@@ -19,16 +19,31 @@ jobs:
         with:
           node-version: 22
       - name: Validate critical patch syntax
-        run: node --check cardfolio-critical-fixes.js
-      - name: Validate production wiring
+        run: |
+          node --check cardfolio-critical-fixes.js
+          node --check cardfolio-exact-identity-client.js
+          node --check cardfolio-production-guard.js
+      - name: Validate Vercel production wiring
         shell: bash
         run: |
           set -euo pipefail
+          test -f vercel.json
+          grep -Fq 'Strict-Transport-Security' vercel.json
+          grep -Fq 'X-Content-Type-Options' vercel.json
+          grep -Fq 'Referrer-Policy' vercel.json
+          grep -Fq 'Permissions-Policy' vercel.json
           grep -Fq 'cardfolio-critical-fixes.js' index.html
-          grep -Fq 'cardfolio-critical-fixes.js' netlify.toml
+          grep -Fq 'cardfolio-exact-identity-client.js' index.html
+          grep -Fq 'cardfolio-production-guard.js' index.html
           grep -Fq 'cardfolio-critical-fixes.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-exact-identity-client.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-production-guard.js' cardfolio-sw.js
           grep -Fq 'robustSaveHolding' cardfolio-critical-fixes.js
           grep -Fq 'signInWithOAuth' cardfolio-critical-fixes.js
           grep -Fq 'skipBrowserRedirect:true' cardfolio-critical-fixes.js
           grep -Fq "provider:'google'" cardfolio-critical-fixes.js
           grep -Fq 'Save failed' cardfolio-critical-fixes.js
+          grep -Fq 'subset:' cardfolio-exact-identity-client.js
+          grep -Fq 'variation:' cardfolio-exact-identity-client.js
+          grep -Fq 'language:' cardfolio-exact-identity-client.js
+          grep -Fq 'edition:' cardfolio-exact-identity-client.js

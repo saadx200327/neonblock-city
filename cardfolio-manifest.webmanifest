@@ -9,9 +9,9 @@
   "theme_color": "#090b10",
   "icons": [
     {
-      "src": "/cardfolio-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/api/cardfolio-icon?v=20260907-2",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

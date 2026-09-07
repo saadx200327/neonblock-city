@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           node --check cardfolio-save-stack-guard.js
           node --check cardfolio-ui-prune.js
-          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js' cardfolio-ui-prune.js
+          grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-1' index.html
           grep -Fq 'serializeForDb' cardfolio-save-stack-guard.js
           if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-stack-guard.js; then
             echo 'Save stack guard must not call the layered readCardForm chain.' >&2
@@ -35,25 +35,33 @@ jobs:
             exit 1
           fi
 
-      - name: Verify guard reached production
+      - name: Verify live proxy can serve the fixed index and guard
         if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
           remote="$(mktemp)"
           trap 'rm -f "$remote"' EXIT
-          for file in cardfolio-ui-prune.js cardfolio-save-stack-guard.js; do
-            matched=0
-            for attempt in $(seq 1 8); do
-              status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
-              if [ "$status" = "200" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then
-                matched=1
-                break
-              fi
-              sleep 5
-            done
-            if [ "$matched" -ne 1 ]; then
-              echo "Production proxy did not serve current $file." >&2
-              exit 1
+          rev="${GITHUB_SHA}-${GITHUB_RUN_ID}"
+
+          index_ok=0
+          guard_ok=0
+          for attempt in $(seq 1 12); do
+            index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&rev=$rev-$attempt" || true)"
+            if [ "$index_status" = "200" ] && grep -Fq '/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-stackfix-1' "$remote"; then
+              index_ok=1
             fi
+
+            guard_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-save-stack-guard.js&rev=$rev-$attempt" || true)"
+            if [ "$guard_status" = "200" ] && grep -Fq 'Cardfolio mobile save stack guard' "$remote" && grep -Fq 'serializeForDb' "$remote"; then
+              guard_ok=1
+            fi
+
+            echo "attempt=$attempt index=$index_status index_ok=$index_ok guard=$guard_status guard_ok=$guard_ok"
+            if [ "$index_ok" -eq 1 ] && [ "$guard_ok" -eq 1 ]; then break; fi
+            sleep 5
           done
+
+          test "$index_ok" -eq 1
+          test "$guard_ok" -eq 1
+          echo 'Live proxy serves the fixed Cardfolio index and cycle-safe save handler.'

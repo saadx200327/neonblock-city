@@ -15,8 +15,9 @@ jobs:
     timeout-minutes: 4
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+      EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Probe canonical Vercel surfaces
         shell: bash
@@ -31,24 +32,32 @@ jobs:
           root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
           echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
-          echo "root redirects to proxy: $(grep -Fq "location.replace('/api/proxy?path=index.html')" "$body" && echo yes || echo no)"
+          test "$root_status" = "200"
+          grep -Fq "location.replace('/api/proxy?path=index.html')" "$body"
+          echo "root proxy bootstrap: verified"
 
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
-          CONFIG_FILE="$config" node <<'NODE'
+          test "$config_status" = "200"
+          CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
           const fs = require('fs');
           const raw = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
+          let cfg;
           try {
-            const cfg = JSON.parse(raw);
-            console.log('api/config summary:', JSON.stringify({
-              configured: cfg.configured,
-              supabaseUrl: cfg.supabaseUrl,
-              publishableKeyType: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
-              ebayConfigured: cfg.ebayConfigured
-            }));
-          } catch {
-            console.log('api/config not-json');
+            cfg = JSON.parse(raw);
+          } catch (error) {
+            console.error('api/config must return valid JSON');
+            process.exit(1);
           }
+
+          const valid = {
+            configured: cfg.configured === true,
+            supabaseUrl: cfg.supabaseUrl === process.env.EXPECTED_SUPABASE_URL,
+            publishableKey: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+            noServiceRole: !('supabaseServiceRoleKey' in cfg) && !('serviceRoleKey' in cfg) && !('SUPABASE_SERVICE_ROLE_KEY' in cfg)
+          };
+          console.log('api/config verification:', JSON.stringify(valid));
+          if (!Object.values(valid).every(Boolean)) process.exit(1);
           NODE
 
           assets=(
@@ -93,4 +102,10 @@ jobs:
             if [ "$proxy_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
 
             printf '%s | direct=%s match=%s type=%s | proxy=%s match=%s type=%s\n' "$file" "${direct_status:-curl-error}" "$direct_match" "${direct_type:-?}" "${proxy_status:-curl-error}" "$proxy_match" "${proxy_type:-?}"
+            if [ "$direct_match" != "yes" ] && [ "$proxy_match" != "yes" ]; then
+              echo "Production asset mismatch: $file" >&2
+              exit 1
+            fi
           done
+
+          echo 'Cardfolio production probe passed with fail-closed verification.'

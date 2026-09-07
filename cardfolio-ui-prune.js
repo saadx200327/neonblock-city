@@ -47,8 +47,20 @@
     return result;
   };
 
+  function loadSaveStackGuard() {
+    if (document.querySelector('script[data-cardfolio-save-stack-guard]')) return;
+    const script = document.createElement('script');
+    script.src = '/api/proxy?path=cardfolio-save-stack-guard.js';
+    script.async = false;
+    script.dataset.cardfolioSaveStackGuard = '1';
+    script.onerror = () => console.error('Cardfolio save stack guard failed to load.');
+    document.head.appendChild(script);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     applyMarkedRemovals();
     requestAnimationFrame(applyMarkedRemovals);
   });
+
+  loadSaveStackGuard();
 })();

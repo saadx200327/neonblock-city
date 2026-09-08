@@ -23,9 +23,15 @@ jobs:
         run: |
           set -euo pipefail
           test -f cardfolio-watchlists-v2.js
+          test -f cardfolio-watchlists-ios-guard.js
           node --check cardfolio-watchlists-v2.js
+          node --check cardfolio-watchlists-ios-guard.js
           grep -Fq 'cardfolio-watchlists-v2.js' index.html
+          grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
+          ! grep -Fq 'src="/cardfolio-watchlist.js"' index.html
           grep -Fq 'cardfolio-watchlists-v2.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-watchlists-ios-guard.js' cardfolio-sw.js
+          ! grep -Fq "'/cardfolio-watchlist.js'" cardfolio-sw.js
           grep -Fq ".liquid-hero .glass-action,.album-card .price-state" cardfolio-watchlists-v2.js
           grep -Fq "state.supabase.from('watchlists')" cardfolio-watchlists-v2.js
           grep -Fq "state.supabase.from('watchlist_items')" cardfolio-watchlists-v2.js
@@ -34,6 +40,8 @@ jobs:
           grep -Fq 'document.activeElement?.blur()' cardfolio-watchlists-v2.js
           grep -Fq 'holding_id:h.id' cardfolio-watchlists-v2.js
           grep -Fq 'watchlist_id:list.id' cardfolio-watchlists-v2.js
+          grep -Fq 'suppressFocusUntil' cardfolio-watchlists-ios-guard.js
+          grep -Fq 'event.stopImmediatePropagation()' cardfolio-watchlists-ios-guard.js
       - name: Validate portfolio-only schema migration
         shell: bash
         run: |

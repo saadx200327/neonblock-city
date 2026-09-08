@@ -23,6 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          failures=0
           headers="$(mktemp)"
           root="$(mktemp)"
           proxied_index="$(mktemp)"
@@ -53,14 +54,19 @@ jobs:
           echo "proxy index SHA-256:  $remote_index_sha"
           test "$local_index_sha" = "$remote_index_sha"
 
-          # /api/config is serverless state owned by the canonical Vercel shell. It must
-          # satisfy the same fail-closed vision contract as branch source; a stale 200 is a failure.
+          # /api/config is serverless state owned by the canonical Vercel shell. Record
+          # its failure but continue probing auth and every browser asset so one P0 does
+          # not hide additional production drift.
           : > "$headers"
           config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config?sha=$GITHUB_SHA" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
           grep -Ei '^(x-vercel-id|x-matched-path|cache-control|content-type):' "$headers" || true
-          test "$config_status" = "200"
-          CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
+          if [ "$config_status" != "200" ]; then
+            echo "::error::Canonical /api/config is not HTTP 200"
+            failures=$((failures+1))
+          fi
+
+          if ! CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
           const fs = require('fs');
           const raw = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
           let cfg;
@@ -89,26 +95,31 @@ jobs:
           console.log('api/config verification:', JSON.stringify(valid));
           if (!Object.values(valid).every(Boolean)) process.exit(1);
           NODE
+          then
+            echo "::error::Canonical /api/config does not satisfy Cardfolio's fail-closed public contract"
+            failures=$((failures+1))
+          fi
 
+          # Connectivity/auth can still be diagnosed from the stale shell's public
+          # Supabase URL + publishable key without treating that shell as healthy.
           mapfile -t public_auth < <(CONFIG_FILE="$config" node <<'NODE'
           const fs = require('fs');
-          const cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8'));
+          let cfg={};
+          try { cfg=JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8')); } catch {}
           console.log(cfg.supabaseUrl || '');
           console.log(cfg.supabasePublishableKey || '');
           NODE
           )
           supabase_url="${public_auth[0]:-}"
           publishable_key="${public_auth[1]:-}"
-          test "$supabase_url" = "$EXPECTED_SUPABASE_URL"
-          test -n "$publishable_key"
-
-          auth_settings_status="$(curl -sS --connect-timeout 8 --max-time 20 \
-            -H "apikey: $publishable_key" \
-            -o "$auth_settings" -w '%{http_code}' \
-            "$supabase_url/auth/v1/settings" || true)"
-          echo "Supabase auth settings HTTP: ${auth_settings_status:-curl-error}"
-          test "$auth_settings_status" = "200"
-          AUTH_SETTINGS_FILE="$auth_settings" node <<'NODE'
+          if [ "$supabase_url" = "$EXPECTED_SUPABASE_URL" ] && [ -n "$publishable_key" ]; then
+            auth_settings_status="$(curl -sS --connect-timeout 8 --max-time 20 \
+              -H "apikey: $publishable_key" \
+              -o "$auth_settings" -w '%{http_code}' \
+              "$supabase_url/auth/v1/settings" || true)"
+            echo "Supabase auth settings HTTP: ${auth_settings_status:-curl-error}"
+            if [ "$auth_settings_status" = "200" ]; then
+              if ! AUTH_SETTINGS_FILE="$auth_settings" node <<'NODE'
           const fs = require('fs');
           let settings;
           try {
@@ -121,30 +132,40 @@ jobs:
           console.log(`Google provider enabled: ${googleEnabled}`);
           if (!googleEnabled) process.exit(1);
           NODE
+              then
+                echo "::error::Google auth provider health check failed"
+                failures=$((failures+1))
+              fi
+            else
+              echo "::error::Supabase auth settings request failed"
+              failures=$((failures+1))
+            fi
 
-          oauth_target="$PRODUCTION_URL/api/proxy?path=index.html"
-          : > "$oauth_headers"
-          oauth_status="$(curl -sS --connect-timeout 8 --max-time 20 --max-redirs 0 \
-            -H "apikey: $publishable_key" \
-            -D "$oauth_headers" -o /dev/null -w '%{http_code}' \
-            --get --data-urlencode 'provider=google' --data-urlencode "redirect_to=$oauth_target" \
-            "$supabase_url/auth/v1/authorize" || true)"
-          echo "Google OAuth launch HTTP: ${oauth_status:-curl-error}"
-          test "$oauth_status" = "302"
-          oauth_location="$(grep -i '^location:' "$oauth_headers" | tail -n1 | sed -E 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
-          case "$oauth_location" in
-            https://accounts.google.com/*|https://accounts.googleusercontent.com/*)
-              echo 'Google OAuth provider launch: verified'
-              ;;
-            *)
-              echo 'Google OAuth did not redirect to a Google authorization endpoint.' >&2
-              exit 1
-              ;;
-          esac
+            oauth_target="$PRODUCTION_URL/api/proxy?path=index.html"
+            : > "$oauth_headers"
+            oauth_status="$(curl -sS --connect-timeout 8 --max-time 20 --max-redirs 0 \
+              -H "apikey: $publishable_key" \
+              -D "$oauth_headers" -o /dev/null -w '%{http_code}' \
+              --get --data-urlencode 'provider=google' --data-urlencode "redirect_to=$oauth_target" \
+              "$supabase_url/auth/v1/authorize" || true)"
+            echo "Google OAuth launch HTTP: ${oauth_status:-curl-error}"
+            oauth_location="$(grep -i '^location:' "$oauth_headers" | tail -n1 | sed -E 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r' || true)"
+            case "$oauth_status|$oauth_location" in
+              302\|https://accounts.google.com/*|302\|https://accounts.googleusercontent.com/*)
+                echo 'Google OAuth provider launch: verified'
+                ;;
+              *)
+                echo '::error::Google OAuth did not redirect to a Google authorization endpoint.'
+                failures=$((failures+1))
+                ;;
+            esac
+          else
+            echo "::error::Cannot continue auth diagnostics because canonical public Supabase connectivity fields are invalid"
+            failures=$((failures+1))
+          fi
 
-          # Discover browser-delivered local CSS/JS/manifest assets from the exact live index.
-          # This prevents a new asset (for example cardfolio-market-v2.css) from being omitted
-          # from the production gate simply because a static workflow list was not updated.
+          # Discover every browser-delivered local CSS/JS/manifest asset from the exact
+          # current branch index, then compare the live response byte-for-byte.
           INDEX_FILE="$proxied_index" node <<'NODE' > "$assets_file"
           const fs = require('fs');
           const html = fs.readFileSync(process.env.INDEX_FILE, 'utf8');
@@ -152,7 +173,7 @@ jobs:
           for (const m of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="([^"]+)"[^>]*>/gi)) {
             const value = m[1];
             if (!value.startsWith('/')) continue;
-            if (value.startsWith('/api/cardfolio-icon')) continue; // dynamic image endpoint, tested elsewhere
+            if (value.startsWith('/api/cardfolio-icon')) continue;
             refs.push(value);
           }
           for (const value of [...new Set(refs)]) console.log(value);
@@ -170,7 +191,6 @@ jobs:
               local_path="${local_path#/}"
             fi
 
-            # Only byte-compare files that are actually owned by this branch.
             if [ -z "$local_path" ] || [ ! -f "$local_path" ]; then
               echo "SKIP dynamic/non-repo $ref"
               continue
@@ -181,18 +201,25 @@ jobs:
               : > "$headers"
               status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL$ref" || true)"
               content_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
-              if [ "$status" = "200" ] && [ "$(sha256sum "$local_path" | awk '{print $1}')" = "$(sha256sum "$remote" | awk '{print $1}')" ]; then
+              local_asset_sha="$(sha256sum "$local_path" | awk '{print $1}')"
+              remote_asset_sha="$(sha256sum "$remote" | awk '{print $1}')"
+              if [ "$status" = "200" ] && [ "$local_asset_sha" = "$remote_asset_sha" ]; then
                 matched=yes
                 printf 'OK %s -> %s (%s)\n' "$ref" "$local_path" "${content_type:-?}"
                 break
               fi
-              printf 'WAIT %s attempt=%s HTTP=%s type=%s\n' "$ref" "$asset_attempt" "${status:-curl-error}" "${content_type:-?}"
+              printf 'WAIT %s attempt=%s HTTP=%s type=%s local=%s remote=%s\n' "$ref" "$asset_attempt" "${status:-curl-error}" "${content_type:-?}" "$local_asset_sha" "$remote_asset_sha"
               [ "$asset_attempt" -eq 6 ] || sleep 5
             done
             if [ "$matched" != yes ]; then
-              echo "Production asset mismatch after bounded propagation retries: $ref -> $local_path" >&2
-              exit 1
+              echo "::error::Production asset mismatch: $ref -> $local_path"
+              failures=$((failures+1))
             fi
           done < "$assets_file"
 
+          echo "production probe failures: $failures"
+          if [ "$failures" -ne 0 ]; then
+            echo 'Cardfolio production probe detected unresolved drift.'
+            exit 1
+          fi
           echo 'Cardfolio production probe passed with fail-closed config + exact asset verification.'

@@ -57,10 +57,22 @@
     document.head.appendChild(script);
   }
 
+  function loadIosCropEditor() {
+    if (document.querySelector('script[data-cardfolio-ios-crop]') || window.cardfolioCropEditorVersion) return;
+    const script = document.createElement('script');
+    script.src = '/api/proxy?path=cardfolio-crop-ios.js&v=20260907-ioscrop-1';
+    script.async = false;
+    script.dataset.cardfolioIosCrop = '1';
+    script.onerror = () => console.error('Cardfolio iPhone-style crop editor failed to load.');
+    document.head.appendChild(script);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     applyMarkedRemovals();
     requestAnimationFrame(applyMarkedRemovals);
+    loadIosCropEditor();
   });
 
   loadSaveStackGuard();
+  loadIosCropEditor();
 })();

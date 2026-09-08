@@ -1,4 +1,4 @@
-const CACHE='cardfolio-shell-v18';
+const CACHE='cardfolio-shell-v19';
 const APP='/api/proxy?path=index.html';
 const SHELL=[
   '/',APP,
@@ -13,6 +13,7 @@ const SHELL=[
   '/api/proxy?path=cardfolio-production-guard.js',
   '/api/proxy?path=cardfolio-market-integrity.js',
   '/api/proxy?path=cardfolio-ui-prune.js',
+  '/api/proxy?path=cardfolio-watchlists-v2.js&v=20260908-1',
   '/cardfolio-manifest.webmanifest','/cardfolio-icon.svg'
 ];
 

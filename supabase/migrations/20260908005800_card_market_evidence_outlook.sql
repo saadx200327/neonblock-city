@@ -12,7 +12,6 @@ declare
   v_p90 numeric;
   v_fmv numeric := new.current_price;
   v_n integer := coalesce(new.valuation_sample_size,0);
-  v_fmt text;
 begin
   if new.valuation_status <> 'priced' or v_fmv is null or v_n <= 0 then
     new.analyst_bull := null;
@@ -68,6 +67,7 @@ on public.canonical_cards
 for each row execute function private.cardfolio_populate_evidence_outlook();
 
 -- Backfill existing priced canonical cards through the same deterministic trigger.
+-- Assigning valuation_status to itself intentionally fires the trigger for preexisting rows.
 update public.canonical_cards
-set updated_at = now()
+set valuation_status = valuation_status
 where valuation_status='priced' and current_price is not null;

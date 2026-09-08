@@ -65,10 +65,15 @@ Deno.serve(async (req: Request) => {
       `;
       const row = rows[0];
       if (!row) return null;
+
       await tx`update private.card_expert_review_tokens set used_at=now() where id=${row.token_id}::uuid`;
       await tx`
         update private.card_expert_review_queue
-           set status='claimed', claimed_at=coalesce(claimed_at,now()), updated_at=now()
+           set status='claimed',
+               claimed_at=now(),
+               attempts=attempts+1,
+               last_error=null,
+               updated_at=now()
          where id=${row.review_id}::uuid
       `;
       return row;

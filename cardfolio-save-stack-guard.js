@@ -1,5 +1,6 @@
 /* Cardfolio definitive save path for iOS/Safari.
-   Runs in capture phase and never calls the legacy form/serializer save chain. */
+   Capture-phase intake guard: prevents legacy save recursion while preserving
+   scan-review metadata required by the private expert-review queue. */
 (function(){
 'use strict';
 
@@ -19,6 +20,12 @@ function uuid(){
 function numOrNull(v){return v!==''&&Number.isFinite(Number(v))?Number(v):null}
 function intAtLeastOne(v){const n=Math.floor(Number(v||1));return Number.isFinite(n)&&n>0?n:1}
 function validUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(v))}
+function normalizeVariant(v){
+  const s=text(v);
+  if(!s||/^(?:base(?:\s*\/\s*standard)?|standard|none|n\/a|not applicable)$/i.test(s))return null;
+  return s;
+}
+function plainObject(v){return !!v&&typeof v==='object'&&!Array.isArray(v)}
 
 function saveState(message,isError=false){
   let box=document.getElementById('cardSaveState');
@@ -52,7 +59,7 @@ function readPrimitiveForm(){
     subset:value('subset')||null,
     card_number:value('cardNumber')||null,
     parallel:value('parallel')||null,
-    variant_name:value('variation')||null,
+    variant_name:normalizeVariant(value('variation')),
     serial_number:value('serialNumber')||null,
     language:value('cardLanguage')||null,
     edition:value('edition')||null,
@@ -77,22 +84,50 @@ function readPrimitiveForm(){
   return h;
 }
 
-function plainMetadata(h){
-  const confidence=typeof state!=='undefined'&&Number.isFinite(Number(state.scan?.confidence))?Number(state.scan.confidence):null;
-  const ocr=typeof state!=='undefined'&&state.scan?.text?String(state.scan.text).slice(0,5000):null;
-  return {
+function localVisualSignature(scanMeta){
+  const raw=(typeof state!=='undefined'&&state.scan?.localVisualSignature)||scanMeta?.local_visual_signature;
+  if(!plainObject(raw))return null;
+  const signature={
+    source:text(raw.source)||'cardfolio_local_v1',
+    image_sha256:text(raw.image_sha256),
+    dhash64:text(raw.dhash64),
+    width:Number.isFinite(Number(raw.width))?Number(raw.width):0,
+    height:Number.isFinite(Number(raw.height))?Number(raw.height):0,
+    generated_at:text(raw.generated_at)||now()
+  };
+  return signature;
+}
+function buildMetadata(h,existingMetadata={}){
+  const base=plainObject(existingMetadata)?{...existingMetadata}:{};
+  const scan=typeof state!=='undefined'?state.scan:null;
+  const scanMeta=plainObject(scan?.fields?.metadata)?scan.fields.metadata:{};
+  const signature=localVisualSignature(scanMeta);
+  const hasScan=!!scan;
+  const needsVisual=hasScan&&!!(scanMeta.needs_visual_analysis||scan?.imageDataUrl||scan?.file||signature);
+
+  const metadata={
+    ...base,
     subset:h.subset,
     variation:h.variant_name,
     variant_name:h.variant_name,
     card_type:h.card_type,
     language:h.language,
     edition:h.edition,
-    scan_confidence:confidence,
-    scan_ocr:ocr,
+    scan_confidence:hasScan&&Number.isFinite(Number(scan?.confidence))?Number(scan.confidence):(base.scan_confidence??null),
+    scan_ocr:hasScan&&scan?.text?String(scan.text).slice(0,5000):(base.scan_ocr??null),
     needs_canonical_link:true,
     resolution_context:'Saved safely. Exact catalog identity and pricing can be resolved after intake.',
     resolution_last_attempt_at:now()
   };
+
+  if(hasScan){
+    metadata.needs_visual_analysis=needsVisual;
+    metadata.visual_analysis_status=text(scanMeta.visual_analysis_status)||(needsVisual?(typeof state!=='undefined'&&state.user?'expert_queue_after_save':'local_only'):'not_required');
+    metadata.expert_review_status=text(scanMeta.expert_review_status)||(needsVisual?(typeof state!=='undefined'&&state.user?'queued_after_save':'signin_required'):'not_required');
+    if(signature)metadata.local_visual_signature=signature;
+    if(text(scanMeta.local_visual_error))metadata.local_visual_error=text(scanMeta.local_visual_error).slice(0,240);
+  }
+  return metadata;
 }
 function clientHolding(row,imageUrl=''){
   return {...row,image_url:imageUrl||'',cost_basis:row.cost_basis??'',manual_value:row.manual_value??'',market_value:row.market_value??null};
@@ -101,7 +136,9 @@ function sanitizeExisting(h={}){
   const out={};
   const keys=['id','category','subject','display_name','year','manufacturer','brand','set_name','subset','card_number','parallel','variant_name','card_type','serial_number','language','edition','team','league','condition','quantity','cost_basis','acquisition_source','acquisition_date','manual_value','grading_company','grade','cert_number','rookie','autograph','relic','notes','image_path','image_url','tcgdex_card_id','market_value','valuation_source','valuation_observed_at','canonical_card_id','valuation_status','created_at','updated_at'];
   for(const k of keys){const v=h?.[k];if(v===null||['string','number','boolean'].includes(typeof v))out[k]=v;}
-  out.external_ids={};out.metadata={};return out;
+  out.external_ids=plainObject(h?.external_ids)?h.external_ids:{};
+  out.metadata=plainObject(h?.metadata)?h.metadata:{};
+  return out;
 }
 
 async function uploadPhotoAfterSave(row){
@@ -134,8 +171,8 @@ async function definitiveSave(){
       market_value:sameIdentity&&Number.isFinite(Number(existing?.market_value))?Number(existing.market_value):null,
       valuation_source:sameIdentity?(text(existing?.valuation_source)||null):null,
       valuation_observed_at:sameIdentity?(existing?.valuation_observed_at||null):null,
-      external_ids:{},
-      metadata:plainMetadata(form),
+      external_ids:sameIdentity&&plainObject(existing?.external_ids)?existing.external_ids:{},
+      metadata:buildMetadata(form,sameIdentity?existing?.metadata:{}),
       canonical_card_id:sameIdentity&&validUuid(existing?.canonical_card_id)?existing.canonical_card_id:null,
       valuation_status:sameIdentity?(text(existing?.valuation_status)||'pending_price'):'pending_price',
       updated_at:now()
@@ -149,7 +186,7 @@ async function definitiveSave(){
       const next=clientHolding(row,imageUrl);
       const i=(state.holdings||[]).findIndex(x=>x?.id===row.id);
       if(i>=0)state.holdings[i]=next;else state.holdings.unshift(next);
-      void uploadPhotoAfterSave(row);
+      await uploadPhotoAfterSave(row);
     }else{
       const next=clientHolding(row,existing?.image_url||state.scan?.imageDataUrl||'');
       const safe=(state.holdings||[]).map(sanitizeExisting);
@@ -183,7 +220,6 @@ function interceptSubmit(event){
   void definitiveSave();
 }
 
-// Capture phase makes this independent of whichever older script last replaced the button.
 document.addEventListener('click',interceptSave,true);
 document.addEventListener('submit',interceptSubmit,true);
 window.cardfolioDefinitiveSave=definitiveSave;

@@ -18,15 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Validate save guard source
+      - name: Validate save guard source and intake contract
         shell: bash
         run: |
           set -euo pipefail
           node --check cardfolio-save-stack-guard.js
           node --check cardfolio-save-v2.js
           node --check cardfolio-ui-prune.js
+          node --check cardfolio-save-contract.test.cjs
+          node cardfolio-save-contract.test.cjs
           grep -Fq 'definitiveSave' cardfolio-save-v2.js
           grep -Fq 'readPrimitiveForm' cardfolio-save-v2.js
+          grep -Fq 'local_visual_signature' cardfolio-save-v2.js
+          grep -Fq 'normalizeVariant' cardfolio-save-v2.js
           grep -Fq "document.addEventListener('click',interceptSave,true)" cardfolio-save-v2.js
           grep -Fq 'cardfolio-save-v2.js' cardfolio-live-fix-20260907.html
           if grep -Eq '(^|[^A-Za-z])readCardForm\(' cardfolio-save-v2.js; then
@@ -51,12 +55,12 @@ jobs:
           guard_ok=0
           for attempt in $(seq 1 12); do
             entry_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-live-fix-20260907.html&rev=$rev-$attempt" || true)"
-            if [ "$entry_status" = "200" ] && grep -Fq 'cardfolio-save-v2.js' "$remote" && grep -Fq 'Loading the corrected save path' "$remote"; then
+            if [ "$entry_status" = "200" ] && grep -Fq 'cardfolio-save-v2.js' "$remote" && grep -Fq '20260907-intake-integrity-1' "$remote"; then
               entry_ok=1
             fi
 
             guard_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=cardfolio-save-v2.js&rev=$rev-$attempt" || true)"
-            if [ "$guard_status" = "200" ] && grep -Fq 'Cardfolio definitive save path for iOS/Safari' "$remote" && grep -Fq 'definitiveSave' "$remote"; then
+            if [ "$guard_status" = "200" ] && grep -Fq 'local_visual_signature' "$remote" && grep -Fq 'normalizeVariant' "$remote" && grep -Fq 'definitiveSave' "$remote"; then
               guard_ok=1
             fi
 
@@ -67,7 +71,7 @@ jobs:
 
           test "$entry_ok" -eq 1
           test "$guard_ok" -eq 1
-          echo 'Live uncached Safari entry and primitive-only save handler are available.'
+          echo 'Live uncached Safari entry preserves expert-review intake metadata and blocks legacy recursion.'
 
       - name: Report canonical index freshness
         if: github.event_name == 'push'
@@ -77,7 +81,7 @@ jobs:
           remote="$(mktemp)"
           trap 'rm -f "$remote"' EXIT
           status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&fresh=${GITHUB_SHA}" || true)"
-          if [ "$status" = "200" ] && grep -Fq 'stackfix-2' "$remote"; then
+          if [ "$status" = "200" ] && grep -Fq '20260907-intake-integrity-1' "$remote"; then
             echo 'Canonical proxied index is current.'
           else
             echo 'WARNING: canonical proxied index is stale; uncached live entry remains the verified recovery path.'

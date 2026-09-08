@@ -12,13 +12,13 @@
   <script>
   (async function(){
     try{
-      const response=await fetch('/api/proxy?path=index.html&entry=livefix-e79cc27b',{cache:'no-store'});
+      const response=await fetch('/api/proxy?path=index.html&entry=20260907-intake-integrity-1',{cache:'no-store'});
       if(!response.ok) throw new Error('Cardfolio shell returned '+response.status);
       let html=await response.text();
-      html=html.replace(/cardfolio-save-stack-guard\.js(?:&amp;|&)v=[^"'<>\s]+/g,'cardfolio-save-v2.js&v=e79cc27b6114d830')
-               .replace(/cardfolio-save-stack-guard\.js/g,'cardfolio-save-v2.js&v=e79cc27b6114d830');
+      html=html.replace(/cardfolio-save-stack-guard\.js(?:&amp;|&)v=[^"'<>\s]+/g,'cardfolio-save-v2.js&v=20260907-intake-integrity-1')
+               .replace(/cardfolio-save-stack-guard\.js/g,'cardfolio-save-v2.js&v=20260907-intake-integrity-1');
       if(!html.includes('cardfolio-save-v2.js')){
-        html=html.replace('</head>','  <script defer src="/api/proxy?path=cardfolio-save-v2.js&v=e79cc27b6114d830"><'+'/script>\n</head>');
+        html=html.replace('</head>','  <script defer src="/api/proxy?path=cardfolio-save-v2.js&v=20260907-intake-integrity-1"><'+'/script>\n</head>');
       }
       document.open();
       document.write(html);

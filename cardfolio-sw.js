@@ -1,10 +1,10 @@
-const CACHE='cardfolio-shell-v19';
+const CACHE='cardfolio-shell-v20';
 const APP='/api/proxy?path=index.html';
 const SHELL=[
   '/',APP,
   '/cardfolio.css','/cardfolio-vnext.css','/cardfolio-liquid.css',
   '/cardfolio-app.js','/cardfolio-app-2.js','/cardfolio-app-3.js','/cardfolio-app-4.js',
-  '/cardfolio-fixes.js','/cardfolio-watchlist.js','/cardfolio-grading.js','/cardfolio-valuation-integrity.js',
+  '/cardfolio-fixes.js','/cardfolio-grading.js','/cardfolio-valuation-integrity.js',
   '/cardfolio-scan-review.js','/cardfolio-vnext.js','/cardfolio-product.js','/cardfolio-product-fixes.js',
   '/cardfolio-runtime-hardening.js','/cardfolio-critical-fixes.js','/cardfolio-live-sync.js',
   '/api/proxy?path=cardfolio-commercial.js',
@@ -14,6 +14,7 @@ const SHELL=[
   '/api/proxy?path=cardfolio-market-integrity.js',
   '/api/proxy?path=cardfolio-ui-prune.js',
   '/api/proxy?path=cardfolio-watchlists-v2.js&v=20260908-1',
+  '/api/proxy?path=cardfolio-watchlists-ios-guard.js&v=20260908-1',
   '/cardfolio-manifest.webmanifest','/cardfolio-icon.svg'
 ];
 

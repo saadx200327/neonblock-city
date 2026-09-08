@@ -1,4 +1,4 @@
-const CACHE='cardfolio-shell-v17';
+const CACHE='cardfolio-shell-v18';
 const APP='/api/proxy?path=index.html';
 const SHELL=[
   '/',APP,
@@ -6,7 +6,7 @@ const SHELL=[
   '/cardfolio-app.js','/cardfolio-app-2.js','/cardfolio-app-3.js','/cardfolio-app-4.js',
   '/cardfolio-fixes.js','/cardfolio-watchlist.js','/cardfolio-grading.js','/cardfolio-valuation-integrity.js',
   '/cardfolio-scan-review.js','/cardfolio-vnext.js','/cardfolio-product.js','/cardfolio-product-fixes.js',
-  '/cardfolio-runtime-hardening.js','/cardfolio-critical-fixes.js',
+  '/cardfolio-runtime-hardening.js','/cardfolio-critical-fixes.js','/cardfolio-live-sync.js',
   '/api/proxy?path=cardfolio-commercial.js',
   '/api/proxy?path=cardfolio-identity-persistence.js',
   '/api/proxy?path=cardfolio-exact-identity-client.js',

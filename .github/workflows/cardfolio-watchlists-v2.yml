@@ -1,0 +1,49 @@
+name: Cardfolio watchlists v2
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  watchlists-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate watchlist client and wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cardfolio-watchlists-v2.js
+          node --check cardfolio-watchlists-v2.js
+          grep -Fq 'cardfolio-watchlists-v2.js' index.html
+          grep -Fq 'cardfolio-watchlists-v2.js' cardfolio-sw.js
+          grep -Fq ".liquid-hero .glass-action,.album-card .price-state" cardfolio-watchlists-v2.js
+          grep -Fq "state.supabase.from('watchlists')" cardfolio-watchlists-v2.js
+          grep -Fq "state.supabase.from('watchlist_items')" cardfolio-watchlists-v2.js
+          grep -Fq 'filterWatchCards' cardfolio-watchlists-v2.js
+          grep -Fq 'filterPicker' cardfolio-watchlists-v2.js
+          grep -Fq 'document.activeElement?.blur()' cardfolio-watchlists-v2.js
+          grep -Fq 'holding_id:h.id' cardfolio-watchlists-v2.js
+          grep -Fq 'watchlist_id:list.id' cardfolio-watchlists-v2.js
+      - name: Validate portfolio-only schema migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=supabase/migrations/20260908214500_watchlists_portfolio_only.sql
+          test -f "$file"
+          grep -Fq 'create table if not exists public.watchlists' "$file"
+          grep -Fq 'alter table public.watchlists enable row level security' "$file"
+          grep -Fq 'holding_id uuid references public.card_holdings(id) on delete cascade' "$file"
+          grep -Fq 'watchlist_id uuid references public.watchlists(id) on delete cascade' "$file"
+          grep -Fq 'watchlist_items_list_holding_uidx' "$file"
+          grep -Fq 'h.user_id = (select auth.uid())' "$file"
+          grep -Fq 'w.user_id = (select auth.uid())' "$file"

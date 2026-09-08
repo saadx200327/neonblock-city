@@ -12,7 +12,7 @@ permissions:
 jobs:
   probe-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 8
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
       EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
@@ -24,22 +24,41 @@ jobs:
         run: |
           set -euo pipefail
           headers="$(mktemp)"
-          body="$(mktemp)"
+          root="$(mktemp)"
+          proxied_index="$(mktemp)"
           config="$(mktemp)"
           remote="$(mktemp)"
           auth_settings="$(mktemp)"
           oauth_headers="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$config" "$remote" "$auth_settings" "$oauth_headers"' EXIT
+          assets_file="$(mktemp)"
+          trap 'rm -f "$headers" "$root" "$proxied_index" "$config" "$remote" "$auth_settings" "$oauth_headers" "$assets_file"' EXIT
 
-          root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
+          # The canonical domain intentionally serves a tiny stable bootstrap that opens
+          # the current cardfolio-mvp index through /api/proxy. Verify both layers.
+          root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$root" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
-          echo "root bytes: $(wc -c < "$body" | tr -d ' ')"
+          echo "root bytes: $(wc -c < "$root" | tr -d ' ')"
+          grep -Ei '^(x-vercel-id|x-matched-path|content-type):' "$headers" || true
           test "$root_status" = "200"
-          grep -Fq "location.replace('/api/proxy?path=index.html')" "$body"
+          grep -Fq "location.replace('/api/proxy?path=index.html')" "$root"
           echo "root proxy bootstrap: verified"
 
-          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
+          proxy_index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$proxied_index" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&sha=$GITHUB_SHA" || true)"
+          echo "proxied index HTTP: ${proxy_index_status:-curl-error}"
+          test "$proxy_index_status" = "200"
+          grep -Fq '<title>Cardfolio</title>' "$proxied_index"
+          local_index_sha="$(sha256sum index.html | awk '{print $1}')"
+          remote_index_sha="$(sha256sum "$proxied_index" | awk '{print $1}')"
+          echo "local index SHA-256:  $local_index_sha"
+          echo "proxy index SHA-256:  $remote_index_sha"
+          test "$local_index_sha" = "$remote_index_sha"
+
+          # /api/config is serverless state owned by the canonical Vercel shell. It must
+          # satisfy the same fail-closed vision contract as branch source; a stale 200 is a failure.
+          : > "$headers"
+          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config?sha=$GITHUB_SHA" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
+          grep -Ei '^(x-vercel-id|x-matched-path|cache-control|content-type):' "$headers" || true
           test "$config_status" = "200"
           CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
           const fs = require('fs');
@@ -47,15 +66,24 @@ jobs:
           let cfg;
           try {
             cfg = JSON.parse(raw);
-          } catch (error) {
+          } catch {
             console.error('api/config must return valid JSON');
             process.exit(1);
           }
 
+          if (/service[_-]?role|SUPABASE_SERVICE_ROLE/i.test(raw)) {
+            console.error('Privileged Supabase credential reference exposed by /api/config');
+            process.exit(1);
+          }
+
+          // Print keys only, never config values/credentials.
+          console.log('api/config keys:', Object.keys(cfg).sort().join(','));
           const valid = {
             configured: cfg.configured === true,
             supabaseUrl: cfg.supabaseUrl === process.env.EXPECTED_SUPABASE_URL,
             publishableKey: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+            visionBackend: cfg.visionBackend === 'expert-queue',
+            paidVisionFallback: cfg.paidVisionFallback === false,
             noServiceRole: !('supabaseServiceRoleKey' in cfg) && !('serviceRoleKey' in cfg) && !('SUPABASE_SERVICE_ROLE_KEY' in cfg)
           };
           console.log('api/config verification:', JSON.stringify(valid));
@@ -114,59 +142,57 @@ jobs:
               ;;
           esac
 
-          assets=(
-            cardfolio-manifest.webmanifest
-            cardfolio-icon.svg
-            cardfolio.css
-            cardfolio-vnext.css
-            cardfolio-liquid.css
-            cardfolio-app.js
-            cardfolio-app-2.js
-            cardfolio-app-3.js
-            cardfolio-app-4.js
-            cardfolio-fixes.js
-            cardfolio-watchlist.js
-            cardfolio-grading.js
-            cardfolio-valuation-integrity.js
-            cardfolio-scan-review.js
-            cardfolio-vnext.js
-            cardfolio-product.js
-            cardfolio-product-fixes.js
-            cardfolio-runtime-hardening.js
-            cardfolio-critical-fixes.js
-            cardfolio-commercial.js
-            cardfolio-identity-persistence.js
-            cardfolio-exact-identity-client.js
-            cardfolio-production-guard.js
-            cardfolio-market-integrity.js
-          )
+          # Discover browser-delivered local CSS/JS/manifest assets from the exact live index.
+          # This prevents a new asset (for example cardfolio-market-v2.css) from being omitted
+          # from the production gate simply because a static workflow list was not updated.
+          INDEX_FILE="$proxied_index" node <<'NODE' > "$assets_file"
+          const fs = require('fs');
+          const html = fs.readFileSync(process.env.INDEX_FILE, 'utf8');
+          const refs = [];
+          for (const m of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="([^"]+)"[^>]*>/gi)) {
+            const value = m[1];
+            if (!value.startsWith('/')) continue;
+            if (value.startsWith('/api/cardfolio-icon')) continue; // dynamic image endpoint, tested elsewhere
+            refs.push(value);
+          }
+          for (const value of [...new Set(refs)]) console.log(value);
+          NODE
 
-          echo 'asset audit:'
-          for file in "${assets[@]}"; do
-            direct_match=no
-            proxy_match=no
-            for asset_attempt in 1 2 3 4 5 6 7 8; do
+          echo 'live index asset audit:'
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            local_path=''
+            if [[ "$ref" == /api/proxy\?path=* ]]; then
+              local_path="${ref#*path=}"
+              local_path="${local_path%%&*}"
+            else
+              local_path="${ref%%\?*}"
+              local_path="${local_path#/}"
+            fi
+
+            # Only byte-compare files that are actually owned by this branch.
+            if [ -z "$local_path" ] || [ ! -f "$local_path" ]; then
+              echo "SKIP dynamic/non-repo $ref"
+              continue
+            fi
+
+            matched=no
+            for asset_attempt in 1 2 3 4 5 6; do
               : > "$headers"
-              direct_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/$file" || true)"
-              direct_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
-              direct_match=no
-              if [ "$direct_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then direct_match=yes; fi
-
-              : > "$headers"
-              proxy_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=$file" || true)"
-              proxy_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
-              proxy_match=no
-              if [ "$proxy_status" = "200" ] && [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$(sha256sum "$remote" | cut -d' ' -f1)" ]; then proxy_match=yes; fi
-
-              printf '%s | attempt=%s | direct=%s match=%s type=%s | proxy=%s match=%s type=%s\n' "$file" "$asset_attempt" "${direct_status:-curl-error}" "$direct_match" "${direct_type:-?}" "${proxy_status:-curl-error}" "$proxy_match" "${proxy_type:-?}"
-              if [ "$direct_match" = "yes" ] || [ "$proxy_match" = "yes" ]; then break; fi
-              if [ "$asset_attempt" -lt 8 ]; then sleep 5; fi
+              status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL$ref" || true)"
+              content_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+              if [ "$status" = "200" ] && [ "$(sha256sum "$local_path" | awk '{print $1}')" = "$(sha256sum "$remote" | awk '{print $1}')" ]; then
+                matched=yes
+                printf 'OK %s -> %s (%s)\n' "$ref" "$local_path" "${content_type:-?}"
+                break
+              fi
+              printf 'WAIT %s attempt=%s HTTP=%s type=%s\n' "$ref" "$asset_attempt" "${status:-curl-error}" "${content_type:-?}"
+              [ "$asset_attempt" -eq 6 ] || sleep 5
             done
-
-            if [ "$direct_match" != "yes" ] && [ "$proxy_match" != "yes" ]; then
-              echo "Production asset mismatch after bounded propagation retries: $file" >&2
+            if [ "$matched" != yes ]; then
+              echo "Production asset mismatch after bounded propagation retries: $ref -> $local_path" >&2
               exit 1
             fi
-          done
+          done < "$assets_file"
 
-          echo 'Cardfolio production probe passed with fail-closed verification.'
+          echo 'Cardfolio production probe passed with fail-closed config + exact asset verification.'

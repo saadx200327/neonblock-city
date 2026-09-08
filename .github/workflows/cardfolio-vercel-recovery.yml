@@ -12,14 +12,17 @@ permissions:
 jobs:
   inspect-vercel:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       EXPECTED_TEAM_ID: team_4sSd0YIrjh1mlefS95vYhY0q
       CANONICAL_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+      GIT_PROJECT_URL: https://cardfolio-saadahmed0020-3481s-projects.vercel.app
     steps:
+      - uses: actions/checkout@v5
+
       - name: Inspect safe Vercel recovery state
         shell: bash
         run: |
@@ -34,8 +37,79 @@ jobs:
           echo "VERCEL_ORG_ID: $(present "${VERCEL_ORG_ID:-}")"
           echo "VERCEL_PROJECT_ID: $(present "${VERCEL_PROJECT_ID:-}")"
 
+          teams="$(mktemp)"
+          projects="$(mktemp)"
+          named_project="$(mktemp)"
+          named_project_2="$(mktemp)"
+          deployments="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          config="$(mktemp)"
+          trap 'rm -f "$teams" "$projects" "$named_project" "$named_project_2" "$deployments" "$headers" "$body" "$config"' EXIT
+
+          # Public diagnostics must always run, even when GitHub Actions has no Vercel
+          # REST token. This keeps the recovery workflow useful instead of false-green.
+          inspect_public_host() {
+            local label="$1"
+            local base="$2"
+            : > "$headers"
+            : > "$body"
+            local public_code
+            public_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -D "$headers" -o "$body" -w '%{http_code}' "$base/" || true)"
+            echo "$label root -> HTTP ${public_code:-curl-error}"
+            grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 20 || true
+            local title
+            title="$(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
+            echo "$label title: ${title:-<none>}"
+            echo "$label root SHA-256: $(sha256sum "$body" | awk '{print $1}')"
+
+            : > "$headers"
+            : > "$config"
+            local config_code
+            config_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -D "$headers" -o "$config" -w '%{http_code}' "$base/api/config?diagnostic=$GITHUB_SHA" || true)"
+            echo "$label /api/config -> HTTP ${config_code:-curl-error}"
+            grep -Eia '^(content-type:|cache-control:|age:|x-vercel-|x-matched-path:)' "$headers" | tail -n 20 || true
+            LABEL="$label" CONFIG_FILE="$config" CONFIG_CODE="$config_code" node <<'NODE'
+          const fs = require('fs');
+          const label = process.env.LABEL;
+          const code = process.env.CONFIG_CODE;
+          if (code !== '200') {
+            console.log(`${label} config JSON: unavailable`);
+            process.exit(0);
+          }
+          let cfg;
+          try { cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8')); }
+          catch { console.log(`${label} config JSON: invalid`); process.exit(0); }
+          const safe = {
+            keys: Object.keys(cfg).sort(),
+            configured: cfg.configured === true,
+            expectedSupabaseProject: cfg.supabaseUrl === 'https://tvxwzkununcwxiwvrslh.supabase.co',
+            publishableKeyShape: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+            visionBackendExpertQueue: cfg.visionBackend === 'expert-queue',
+            paidVisionFallbackFalse: cfg.paidVisionFallback === false,
+            containsServiceRoleField: ['supabaseServiceRoleKey','serviceRoleKey','SUPABASE_SERVICE_ROLE_KEY'].some(k => k in cfg)
+          };
+          console.log(`${label} safe config:`, JSON.stringify(safe));
+          NODE
+          }
+
+          inspect_public_host canonical "$CANONICAL_URL"
+          inspect_public_host git_project_candidate "$GIT_PROJECT_URL"
+
+          echo 'canonical proxied index check:'
+          proxy_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -o "$body" -w '%{http_code}' "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA" || true)"
+          echo "canonical /api/proxy?path=index.html -> HTTP ${proxy_code:-curl-error}"
+          if [ "$proxy_code" = 200 ]; then
+            local_sha="$(sha256sum index.html | awk '{print $1}')"
+            proxy_sha="$(sha256sum "$body" | awk '{print $1}')"
+            echo "branch index SHA-256: $local_sha"
+            echo "proxy index SHA-256:  $proxy_sha"
+            if [ "$local_sha" = "$proxy_sha" ]; then echo 'proxied branch index: CURRENT'; else echo 'proxied branch index: STALE/DIFFERENT'; fi
+          fi
+
           if [ -z "${VERCEL_TOKEN:-}" ]; then
-            echo 'No repository VERCEL_TOKEN is available; REST recovery cannot run from GitHub Actions.'
+            echo 'No repository VERCEL_TOKEN is available; authenticated Vercel REST recovery cannot run from GitHub Actions.'
+            echo 'Public diagnostics above still ran. Add credentials only through GitHub/Vercel secret management; never paste a token into repository files or chat.'
             exit 0
           fi
 
@@ -50,22 +124,12 @@ jobs:
             echo "$code"
           }
 
-          teams="$(mktemp)"
-          projects="$(mktemp)"
-          named_project="$(mktemp)"
-          deployments="$(mktemp)"
-          headers="$(mktemp)"
-          body="$(mktemp)"
-          trap 'rm -f "$teams" "$projects" "$named_project" "$deployments" "$headers" "$body"' EXIT
-
           teams_code="$(api_get 'https://api.vercel.com/v2/teams?limit=100' "$teams")"
           echo "GET /v2/teams -> HTTP $teams_code"
           TEAMS_FILE="$teams" node <<'NODE'
           const fs = require('fs');
-          const p = process.env.TEAMS_FILE;
-          const raw = fs.readFileSync(p, 'utf8');
           let data;
-          try { data = JSON.parse(raw); } catch { console.log('teams response was not JSON'); process.exit(0); }
+          try { data = JSON.parse(fs.readFileSync(process.env.TEAMS_FILE, 'utf8')); } catch { console.log('teams response was not JSON'); process.exit(0); }
           const rows = (data.teams || []).map(t => ({ id: t.id, slug: t.slug, name: t.name }));
           console.log('teams:', JSON.stringify(rows));
           NODE
@@ -88,25 +152,26 @@ jobs:
           console.log('projects:', JSON.stringify(rows));
           NODE
 
-          named_code="$(api_get "https://api.vercel.com/v9/projects/saad-cardfolio?teamId=${EXPECTED_TEAM_ID}" "$named_project")"
-          echo "GET /v9/projects/saad-cardfolio?teamId=EXPECTED -> HTTP $named_code"
-          NAMED_FILE="$named_project" node <<'NODE'
+          for slug in cardfolio saad-cardfolio; do
+            target="$named_project"
+            [ "$slug" = cardfolio ] || target="$named_project_2"
+            named_code="$(api_get "https://api.vercel.com/v9/projects/${slug}?teamId=${EXPECTED_TEAM_ID}" "$target")"
+            echo "GET /v9/projects/${slug}?teamId=EXPECTED -> HTTP $named_code"
+            SLUG="$slug" NAMED_FILE="$target" node <<'NODE'
           const fs = require('fs');
           let data;
-          try { data = JSON.parse(fs.readFileSync(process.env.NAMED_FILE, 'utf8')); } catch { console.log('named project response was not JSON'); process.exit(0); }
+          try { data = JSON.parse(fs.readFileSync(process.env.NAMED_FILE, 'utf8')); } catch { console.log(`${process.env.SLUG}: response was not JSON`); process.exit(0); }
           if (data.error) {
-            console.log('named project error:', JSON.stringify({ code: data.error.code, message: data.error.message }));
+            console.log(`${process.env.SLUG} error:`, JSON.stringify({ code: data.error.code, message: data.error.message }));
           } else {
-            console.log('named project:', JSON.stringify({
-              id: data.id,
-              name: data.name,
-              accountId: data.accountId,
-              framework: data.framework,
+            console.log(`${process.env.SLUG} project:`, JSON.stringify({
+              id: data.id, name: data.name, accountId: data.accountId, framework: data.framework,
               rootDirectory: data.rootDirectory,
               link: data.link ? { type: data.link.type, repo: data.link.repo, repoId: data.link.repoId, productionBranch: data.link.productionBranch } : null
             }));
           }
           NODE
+          done
 
           deployments_code="$(api_get "https://api.vercel.com/v13/deployments?teamId=${EXPECTED_TEAM_ID}&limit=100" "$deployments")"
           echo "GET /v13/deployments?teamId=EXPECTED -> HTTP $deployments_code"
@@ -115,7 +180,7 @@ jobs:
           let data;
           try { data = JSON.parse(fs.readFileSync(process.env.DEPLOYMENTS_FILE, 'utf8')); } catch { console.log('deployments response was not JSON'); process.exit(0); }
           if (data.error) console.log('deployments error:', JSON.stringify({ code: data.error.code, message: data.error.message }));
-          const rows = (data.deployments || []).slice(0, 25).map(d => ({
+          const rows = (data.deployments || []).slice(0, 40).map(d => ({
             uid: d.uid,
             name: d.name,
             url: d.url,
@@ -128,11 +193,3 @@ jobs:
           }));
           console.log('deployments:', JSON.stringify(rows));
           NODE
-
-          public_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -D "$headers" -o "$body" -w '%{http_code}' "$CANONICAL_URL/" || true)"
-          echo "canonical public URL -> HTTP ${public_code:-curl-error}"
-          echo 'canonical response headers:'
-          grep -Eia '^(HTTP/|content-type:|content-length:|server:|location:|x-vercel-|x-matched-path:)' "$headers" | tail -n 30 || true
-          title="$(grep -Eio '<title>[^<]*</title>' "$body" | head -n 1 || true)"
-          echo "canonical HTML title: ${title:-<none>}"
-          echo "canonical body SHA-256: $(sha256sum "$body" | awk '{print $1}')"

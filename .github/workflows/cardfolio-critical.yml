@@ -49,6 +49,8 @@ jobs:
           grep -Fq "'language'" cardfolio-exact-identity-client.js
           grep -Fq "'edition'" cardfolio-exact-identity-client.js
           grep -Fq 'tvxwzkununcwxiwvrslh.supabase.co' api/config.js
+          grep -Fq "visionBackend:'expert-queue'" api/config.js
+          grep -Fq 'paidVisionFallback:false' api/config.js
           if grep -Ein 'service[_-]?role|SUPABASE_SERVICE_ROLE' index.html cardfolio-*.js cardfolio*.css cardfolio-manifest.webmanifest; then
             echo 'Privileged Supabase credential reference found in browser-delivered files.' >&2
             exit 1
@@ -120,8 +122,12 @@ jobs:
             echo "OK $path"
           done < /tmp/cardfolio-local-scripts.txt
 
-          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
-          test "$config_status" = "200"
+          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config" || true)"
+          if [ "$config_status" != "200" ]; then
+            echo "Production /api/config returned HTTP ${config_status:-curl-error}." >&2
+            grep -Ei '^(content-type|x-vercel-error|x-vercel-id):' "$headers" >&2 || true
+            exit 1
+          fi
           CONFIG_FILE="$config" node <<'NODE'
           const fs = require('fs');
           const raw = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
@@ -134,5 +140,11 @@ jobs:
           }
           if (typeof cfg.supabasePublishableKey !== 'string' || !cfg.supabasePublishableKey.startsWith('sb_publishable_')) {
             throw new Error('Production /api/config is not returning the expected publishable Supabase key type.');
+          }
+          if (cfg.visionBackend !== 'expert-queue') {
+            throw new Error(`Unexpected production vision backend: ${cfg.visionBackend}`);
+          }
+          if (cfg.paidVisionFallback !== false) {
+            throw new Error('Production paid vision fallback must remain disabled.');
           }
           NODE

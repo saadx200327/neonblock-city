@@ -12,7 +12,11 @@ const PUBLIC_BACKEND_CONFIG={
   configured:true,
   supabaseUrl:'https://tvxwzkununcwxiwvrslh.supabase.co',
   supabasePublishableKey:'sb_publishable_--j19axhauUMNFXCgUumMA_d1teIy0H',
-  ebayConfigured:false
+  ebayConfigured:false,
+  // Fail-closed browser defaults. The public shell may lag branch serverless config,
+  // but normal scans must still remain on the zero-cost expert-review queue path.
+  visionBackend:'expert-queue',
+  paidVisionFallback:false
 };
 const state = {
   view:'home', holdings:[], snapshots:[], watchlist:[], backend:'local', supabase:null, user:null,
@@ -35,10 +39,17 @@ async function bootstrap(){
 function loadLocal(){try{state.holdings=JSON.parse(localStorage.getItem(LOCAL_HOLDINGS)||'[]');state.snapshots=JSON.parse(localStorage.getItem(LOCAL_SNAPSHOTS)||'[]');state.watchlist=JSON.parse(localStorage.getItem(LOCAL_WATCHLIST)||'[]')}catch{state.holdings=[];state.snapshots=[];state.watchlist=[]}}
 function saveLocal(){localStorage.setItem(LOCAL_HOLDINGS,JSON.stringify(state.holdings));localStorage.setItem(LOCAL_SNAPSHOTS,JSON.stringify(state.snapshots));localStorage.setItem(LOCAL_WATCHLIST,JSON.stringify(state.watchlist))}
 async function initBackend(){
-  let cfg=PUBLIC_BACKEND_CONFIG;
+  let cfg={...PUBLIC_BACKEND_CONFIG};
   try{
     const r=await fetch('/api/config',{cache:'no-store'});
-    if(r.ok){const remote=await r.json();if(remote?.configured)cfg={...cfg,...remote};}
+    if(r.ok){
+      const remote=await r.json();
+      if(remote?.configured){
+        // Remote public connectivity values may refresh, but these two safety invariants
+        // are branch-owned and cannot be weakened by a stale/miswired Vercel shell.
+        cfg={...cfg,...remote,visionBackend:'expert-queue',paidVisionFallback:false};
+      }
+    }
   }catch{}
   try{
     state.config=cfg;

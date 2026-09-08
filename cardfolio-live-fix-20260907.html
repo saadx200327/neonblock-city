@@ -8,17 +8,20 @@
   <style>html,body{margin:0;min-height:100%;background:#f4f7fb;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.boot{min-height:100vh;display:grid;place-items:center;padding:24px;text-align:center}.boot strong{display:block;font-size:22px;margin-bottom:8px}.boot span{color:#667085}</style>
 </head>
 <body>
-  <div class="boot"><div><strong>Opening Cardfolio…</strong><span>Loading the corrected save path.</span></div></div>
+  <div class="boot"><div><strong>Opening Cardfolio…</strong><span>Loading the corrected save and crop paths.</span></div></div>
   <script>
   (async function(){
     try{
-      const response=await fetch('/api/proxy?path=index.html&entry=20260907-intake-integrity-1',{cache:'no-store'});
+      const response=await fetch('/api/proxy?path=index.html&entry=20260907-ioscrop-1',{cache:'no-store'});
       if(!response.ok) throw new Error('Cardfolio shell returned '+response.status);
       let html=await response.text();
       html=html.replace(/cardfolio-save-stack-guard\.js(?:&amp;|&)v=[^"'<>\s]+/g,'cardfolio-save-v2.js&v=20260907-intake-integrity-1')
                .replace(/cardfolio-save-stack-guard\.js/g,'cardfolio-save-v2.js&v=20260907-intake-integrity-1');
       if(!html.includes('cardfolio-save-v2.js')){
         html=html.replace('</head>','  <script defer src="/api/proxy?path=cardfolio-save-v2.js&v=20260907-intake-integrity-1"><'+'/script>\n</head>');
+      }
+      if(!html.includes('cardfolio-crop-ios.js')){
+        html=html.replace('</head>','  <script defer src="/api/proxy?path=cardfolio-crop-ios.js&v=20260907-ioscrop-1"><'+'/script>\n</head>');
       }
       document.open();
       document.write(html);

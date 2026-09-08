@@ -12,7 +12,7 @@ permissions:
 jobs:
   probe-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       PRODUCTION_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
       EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
@@ -34,33 +34,60 @@ jobs:
           assets_file="$(mktemp)"
           trap 'rm -f "$headers" "$root" "$proxied_index" "$config" "$remote" "$auth_settings" "$oauth_headers" "$assets_file"' EXIT
 
-          # The canonical domain intentionally serves a tiny stable bootstrap that opens
-          # the current cardfolio-mvp index through /api/proxy. Verify both layers.
-          root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$root" -w '%{http_code}' "$PRODUCTION_URL/" || true)"
+          # The canonical public host is intentionally a tiny stable shell which opens
+          # the branch application through /api/proxy. Validate the shell, but continue
+          # diagnostics if it is broken so one failure cannot hide additional drift.
+          root_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -H 'Cache-Control: no-cache' -D "$headers" -o "$root" -w '%{http_code}' "$PRODUCTION_URL/?probe=$GITHUB_SHA" || true)"
           echo "root HTTP: ${root_status:-curl-error}"
           echo "root bytes: $(wc -c < "$root" | tr -d ' ')"
-          grep -Ei '^(x-vercel-id|x-matched-path|content-type):' "$headers" || true
-          test "$root_status" = "200"
-          grep -Fq "location.replace('/api/proxy?path=index.html')" "$root"
-          echo "root proxy bootstrap: verified"
+          grep -Ei '^(age|x-vercel-cache|x-vercel-id|x-matched-path|content-type):' "$headers" || true
+          if [ "$root_status" != "200" ] || ! grep -Fq "location.replace('/api/proxy?path=index.html')" "$root"; then
+            echo "::error::Canonical public bootstrap is unavailable or unexpected"
+            failures=$((failures+1))
+          else
+            echo "root proxy bootstrap: verified"
+          fi
 
-          proxy_index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -o "$proxied_index" -w '%{http_code}' "$PRODUCTION_URL/api/proxy?path=index.html&sha=$GITHUB_SHA" || true)"
-          echo "proxied index HTTP: ${proxy_index_status:-curl-error}"
-          test "$proxy_index_status" = "200"
-          grep -Fq '<title>Cardfolio</title>' "$proxied_index"
+          # GitHub/raw/Vercel proxy propagation can lag a branch push. Retry a bounded
+          # window with unique query nonces. If still stale, mark the drift but switch to
+          # the local index for expected-asset discovery so the remainder of the probe runs.
           local_index_sha="$(sha256sum index.html | awk '{print $1}')"
-          remote_index_sha="$(sha256sum "$proxied_index" | awk '{print $1}')"
-          echo "local index SHA-256:  $local_index_sha"
-          echo "proxy index SHA-256:  $remote_index_sha"
-          test "$local_index_sha" = "$remote_index_sha"
+          index_current=0
+          for index_attempt in $(seq 1 12); do
+            : > "$headers"
+            : > "$proxied_index"
+            nonce="${GITHUB_SHA}-${index_attempt}-$(date +%s)"
+            proxy_index_status="$(curl -sS -L --connect-timeout 8 --max-time 20 \
+              -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+              -D "$headers" -o "$proxied_index" -w '%{http_code}' \
+              "$PRODUCTION_URL/api/proxy?path=index.html&sha=$GITHUB_SHA&probe=$nonce" || true)"
+            remote_index_sha="$(sha256sum "$proxied_index" | awk '{print $1}')"
+            cache_state="$(grep -i '^x-vercel-cache:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+            age_state="$(grep -i '^age:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+            echo "proxied index attempt=$index_attempt HTTP=${proxy_index_status:-curl-error} cache=${cache_state:-?} age=${age_state:-?} local=$local_index_sha remote=$remote_index_sha"
+            if [ "$proxy_index_status" = "200" ] \
+              && grep -Fq '<title>Cardfolio</title>' "$proxied_index" \
+              && [ "$local_index_sha" = "$remote_index_sha" ]; then
+              index_current=1
+              break
+            fi
+            [ "$index_attempt" -eq 12 ] || sleep 10
+          done
+          if [ "$index_current" -ne 1 ]; then
+            echo "::error::Canonical proxied index remained stale after bounded propagation retries"
+            failures=$((failures+1))
+            cp index.html "$proxied_index"
+          else
+            echo "proxied branch index: CURRENT"
+          fi
 
           # /api/config is serverless state owned by the canonical Vercel shell. Record
           # its failure but continue probing auth and every browser asset so one P0 does
           # not hide additional production drift.
           : > "$headers"
-          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config?sha=$GITHUB_SHA" || true)"
+          config_status="$(curl -sS -L --connect-timeout 8 --max-time 20 -H 'Cache-Control: no-cache' -D "$headers" -o "$config" -w '%{http_code}' "$PRODUCTION_URL/api/config?sha=$GITHUB_SHA&probe=$(date +%s)" || true)"
           echo "api/config HTTP: ${config_status:-curl-error}"
-          grep -Ei '^(x-vercel-id|x-matched-path|cache-control|content-type):' "$headers" || true
+          grep -Ei '^(age|x-vercel-cache|x-vercel-id|x-matched-path|cache-control|content-type):' "$headers" || true
           if [ "$config_status" != "200" ]; then
             echo "::error::Canonical /api/config is not HTTP 200"
             failures=$((failures+1))
@@ -165,7 +192,7 @@ jobs:
           fi
 
           # Discover every browser-delivered local CSS/JS/manifest asset from the exact
-          # current branch index, then compare the live response byte-for-byte.
+          # expected branch index, then compare the live response byte-for-byte.
           INDEX_FILE="$proxied_index" node <<'NODE' > "$assets_file"
           const fs = require('fs');
           const html = fs.readFileSync(process.env.INDEX_FILE, 'utf8');
@@ -197,22 +224,35 @@ jobs:
             fi
 
             matched=no
+            mime_ok=no
             for asset_attempt in 1 2 3 4 5 6; do
               : > "$headers"
-              status="$(curl -sS -L --connect-timeout 8 --max-time 20 -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL$ref" || true)"
+              nonce="${GITHUB_SHA}-${asset_attempt}-$(date +%s)"
+              joiner='?'
+              [[ "$ref" == *\?* ]] && joiner='&'
+              status="$(curl -sS -L --connect-timeout 8 --max-time 20 \
+                -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+                -D "$headers" -o "$remote" -w '%{http_code}' "$PRODUCTION_URL${ref}${joiner}probe=${nonce}" || true)"
               content_type="$(grep -i '^content-type:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
+              cache_state="$(grep -i '^x-vercel-cache:' "$headers" | tail -n1 | tr -d '\r' | cut -d' ' -f2- || true)"
               local_asset_sha="$(sha256sum "$local_path" | awk '{print $1}')"
               remote_asset_sha="$(sha256sum "$remote" | awk '{print $1}')"
-              if [ "$status" = "200" ] && [ "$local_asset_sha" = "$remote_asset_sha" ]; then
+              mime_ok=yes
+              case "$local_path" in
+                *.css) [[ "$content_type" == text/css* ]] || mime_ok=no ;;
+                *.js) [[ "$content_type" == *javascript* ]] || mime_ok=no ;;
+                *.webmanifest) [[ "$content_type" == *manifest* || "$content_type" == application/json* ]] || mime_ok=no ;;
+              esac
+              if [ "$status" = "200" ] && [ "$local_asset_sha" = "$remote_asset_sha" ] && [ "$mime_ok" = yes ]; then
                 matched=yes
-                printf 'OK %s -> %s (%s)\n' "$ref" "$local_path" "${content_type:-?}"
+                printf 'OK %s -> %s (%s cache=%s)\n' "$ref" "$local_path" "${content_type:-?}" "${cache_state:-?}"
                 break
               fi
-              printf 'WAIT %s attempt=%s HTTP=%s type=%s local=%s remote=%s\n' "$ref" "$asset_attempt" "${status:-curl-error}" "${content_type:-?}" "$local_asset_sha" "$remote_asset_sha"
+              printf 'WAIT %s attempt=%s HTTP=%s type=%s mime_ok=%s cache=%s local=%s remote=%s\n' "$ref" "$asset_attempt" "${status:-curl-error}" "${content_type:-?}" "$mime_ok" "${cache_state:-?}" "$local_asset_sha" "$remote_asset_sha"
               [ "$asset_attempt" -eq 6 ] || sleep 5
             done
             if [ "$matched" != yes ]; then
-              echo "::error::Production asset mismatch: $ref -> $local_path"
+              echo "::error::Production asset mismatch or unsafe MIME: $ref -> $local_path"
               failures=$((failures+1))
             fi
           done < "$assets_file"

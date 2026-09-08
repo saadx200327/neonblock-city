@@ -23,6 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check cardfolio-app.js
           node --check cardfolio-scan-review.js
           test -f supabase/functions/card-expert-review/index.ts
           test -f supabase/migrations/20260907184959_card_expert_review_pipeline.sql
@@ -35,9 +36,15 @@ jobs:
           grep -Fq 'dhash64' cardfolio-scan-review.js
           grep -Fq "needs_visual_analysis:true" cardfolio-scan-review.js
           grep -Fq "visual_analysis_status:signedIn?'expert_queue_after_save':'local_only'" cardfolio-scan-review.js
+
+          # Both the canonical serverless source and browser fallback must fail closed.
+          # This protects normal scans even while the public Vercel shell is stale.
           grep -Fq "visionBackend:'expert-queue'" api/config.js
           grep -Fq 'paidVisionFallback:false' api/config.js
-          echo 'Scan-time vision uses local fingerprints and no paid GPT call.'
+          grep -Fq "visionBackend:'expert-queue'" cardfolio-app.js
+          grep -Fq 'paidVisionFallback:false' cardfolio-app.js
+          grep -Fq "cfg={...cfg,...remote,visionBackend:'expert-queue',paidVisionFallback:false}" cardfolio-app.js
+          echo 'Scan-time vision uses local fingerprints, expert-queue fail-closed browser config, and no paid GPT call.'
 
       - name: Verify private expert queue contract
         shell: bash

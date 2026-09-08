@@ -1,0 +1,1 @@
+drop index if exists public.idx_card_market_research_runs_card_time;

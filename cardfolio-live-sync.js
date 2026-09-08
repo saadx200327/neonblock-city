@@ -56,3 +56,14 @@ setInterval(()=>void refreshCloud('timer',false),POLL_MS);
 
 window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
 })();
+
+/* Loaded after the existing market-integrity layer so it can safely improve only
+   the card-detail market presentation without changing canonical valuation data. */
+(function loadCardfolioMarketExperience(){
+  if(document.querySelector('script[data-cardfolio-market-experience]'))return;
+  const script=document.createElement('script');
+  script.src='/cardfolio-market-experience.js?v=20260908-1';
+  script.async=false;
+  script.dataset.cardfolioMarketExperience='1';
+  document.head.appendChild(script);
+})();

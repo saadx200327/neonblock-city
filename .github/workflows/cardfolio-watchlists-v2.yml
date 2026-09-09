@@ -24,8 +24,10 @@ jobs:
           set -euo pipefail
           test -f cardfolio-watchlists-v2.js
           test -f cardfolio-watchlists-ios-guard.js
+          test -f cardfolio-header-logo.webp
           node --check cardfolio-watchlists-v2.js
           node --check cardfolio-watchlists-ios-guard.js
+          node --check cardfolio-ui-prune.js
           grep -Fq 'cardfolio-watchlists-v2.js' index.html
           grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
           ! grep -Fq 'src="/cardfolio-watchlist.js"' index.html
@@ -42,6 +44,17 @@ jobs:
           grep -Fq 'watchlist_id:list.id' cardfolio-watchlists-v2.js
           grep -Fq 'suppressFocusUntil' cardfolio-watchlists-ios-guard.js
           grep -Fq 'event.stopImmediatePropagation()' cardfolio-watchlists-ios-guard.js
+      - name: Validate requested mobile header and empty-watchlist behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'cardfolio-topbar-logo' cardfolio-ui-prune.js
+          grep -Fq 'cardfolio-header-logo.webp' cardfolio-ui-prune.js
+          grep -Fq "document.querySelector('.watch-v2-head .eyebrow')?.remove()" cardfolio-ui-prune.js
+          grep -Fq "document.querySelector('.watch-v2-head p')?.remove()" cardfolio-ui-prune.js
+          grep -Fq "Boolean(document.querySelector('.watch-list-chip'))" cardfolio-ui-prune.js
+          grep -Fq 'newList.hidden = !hasLists' cardfolio-ui-prune.js
+          grep -Fq 'observeDynamicUi' cardfolio-ui-prune.js
       - name: Validate portfolio-only schema migration
         shell: bash
         run: |

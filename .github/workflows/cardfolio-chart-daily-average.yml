@@ -1,0 +1,64 @@
+name: Cardfolio daily-average chart guard
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  chart-daily-average:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate daily-average chart behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'cardfolio-chart-daily-average.js' index.html
+          node --check cardfolio-chart-daily-average.js
+          node <<'NODE'
+          const fs=require('fs');
+          const vm=require('vm');
+          let src=fs.readFileSync('cardfolio-chart-daily-average.js','utf8');
+          src=src.replace(/\}\)\(\);\s*$/, ';globalThis.__chartTest={aggregateByDay,smoothPath};})();');
+          const context={
+            console,
+            Intl,
+            Date,
+            Map,
+            Set,
+            Math,
+            Number,
+            String,
+            MutationObserver:class{observe(){}},
+            document:{readyState:'loading',addEventListener(){},documentElement:{},querySelectorAll(){return[]}}
+          };
+          context.globalThis=context;
+          vm.createContext(context);
+          vm.runInContext(src,context);
+          const {aggregateByDay,smoothPath}=context.__chartTest;
+          if(typeof aggregateByDay!=='function'||typeof smoothPath!=='function') throw new Error('chart test hooks unavailable');
+          const raw=[
+            {time:Date.parse('2026-09-08T08:00:00Z'),price:5,marketplace:'eBay'},
+            {time:Date.parse('2026-09-08T12:00:00Z'),price:7,marketplace:'eBay'},
+            {time:Date.parse('2026-09-08T18:00:00Z'),price:9,marketplace:'COMC'},
+            {time:Date.parse('2026-09-09T12:00:00Z'),price:11,marketplace:'eBay'}
+          ];
+          const before=JSON.stringify(raw);
+          const daily=aggregateByDay(raw);
+          if(daily.length!==2) throw new Error(`expected 2 plotted days, got ${daily.length}`);
+          if(Math.abs(daily[0].price-7)>1e-9||daily[0].count!==3) throw new Error('same-day sales were not averaged correctly');
+          if(Math.abs(daily[1].price-11)>1e-9||daily[1].count!==1) throw new Error('single-sale day changed unexpectedly');
+          if(JSON.stringify(raw)!==before) throw new Error('raw comp inputs were mutated');
+          const path=smoothPath([{x:0,y:10},{x:10,y:20},{x:20,y:15}]);
+          if(!/^M /.test(path)||/NaN|Infinity/.test(path)) throw new Error('smooth path invalid');
+          console.log('daily-average chart regression guard passed');
+          NODE

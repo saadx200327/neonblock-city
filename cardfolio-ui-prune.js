@@ -7,7 +7,10 @@
   const HOME_HISTORY_COPY = '<span>History begins when Cardfolio records real market observations. No synthetic backfill.</span>';
   const HOME_TIMELINE_COPY = '<div class="timeline-note">Built only from recorded Cardfolio valuations.</div>';
   const SCAN_TIPS = /<aside class="scan-tips">[\s\S]*?<\/aside>/;
-  const HEADER_LOGO_SRC = '/api/proxy?path=cardfolio-header-logo.webp&v=20260909-1';
+  // Use the dedicated PNG image function. The generic /api/proxy path is for text assets
+  // and can return a non-image response for binary WebP files, which renders as a broken image.
+  const HEADER_LOGO_SRC = '/api/cardfolio-icon?v=20260909-header-1';
+  const HEADER_LOGO_FALLBACK_SRC = '/cardfolio-icon.svg?v=20260909-header-1';
 
   const baseHomeView = homeView;
   homeView = function () {
@@ -70,6 +73,11 @@
     image.src = HEADER_LOGO_SRC;
     image.alt = '';
     image.decoding = 'async';
+    image.addEventListener('error', () => {
+      if (image.dataset.cardfolioFallbackApplied) return;
+      image.dataset.cardfolioFallbackApplied = '1';
+      image.src = HEADER_LOGO_FALLBACK_SRC;
+    });
     brand.appendChild(image);
     topbar.appendChild(brand);
   }

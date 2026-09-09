@@ -7,10 +7,7 @@
   const HOME_HISTORY_COPY = '<span>History begins when Cardfolio records real market observations. No synthetic backfill.</span>';
   const HOME_TIMELINE_COPY = '<div class="timeline-note">Built only from recorded Cardfolio valuations.</div>';
   const SCAN_TIPS = /<aside class="scan-tips">[\s\S]*?<\/aside>/;
-  // Use the dedicated PNG image function. The generic /api/proxy path is for text assets
-  // and can return a non-image response for binary WebP files, which renders as a broken image.
-  const HEADER_LOGO_SRC = '/api/cardfolio-icon?v=20260909-header-1';
-  const HEADER_LOGO_FALLBACK_SRC = '/cardfolio-icon.svg?v=20260909-header-1';
+  const BRAND_LOGO_SRC = '/api/cardfolio-icon?v=20260909-official-brand-1';
 
   const baseHomeView = homeView;
   homeView = function () {
@@ -42,19 +39,22 @@
       }
       .cardfolio-topbar-logo img{
         display:block;
-        width:108px;
-        max-width:24vw;
+        width:118px;
+        max-width:27vw;
         height:auto;
-        max-height:82px;
+        max-height:88px;
         object-fit:contain;
-        filter:drop-shadow(0 7px 16px rgba(25,55,95,.08));
+        filter:drop-shadow(0 7px 16px rgba(25,55,95,.10));
       }
       .topbar>div:first-child,.topbar>.top-actions{position:relative;z-index:2}
+      .brand{justify-content:center;padding:0 8px 24px}
+      .brand-logo{display:block;width:132px;max-width:100%;height:auto;object-fit:contain}
+      .auth-brand-logo{display:block;width:100px;height:auto;object-fit:contain;margin:0 auto 10px}
       @media(max-width:720px){
-        .cardfolio-topbar-logo img{width:96px;max-width:25vw;max-height:72px}
+        .cardfolio-topbar-logo img{width:104px;max-width:28vw;max-height:76px}
       }
       @media(max-width:390px){
-        .cardfolio-topbar-logo img{width:86px;max-width:24vw;max-height:66px}
+        .cardfolio-topbar-logo img{width:94px;max-width:27vw;max-height:70px}
       }
     `;
     document.head.appendChild(style);
@@ -70,16 +70,17 @@
     brand.className = 'cardfolio-topbar-logo';
     brand.setAttribute('aria-hidden', 'true');
     const image = document.createElement('img');
-    image.src = HEADER_LOGO_SRC;
+    image.src = BRAND_LOGO_SRC;
     image.alt = '';
     image.decoding = 'async';
-    image.addEventListener('error', () => {
-      if (image.dataset.cardfolioFallbackApplied) return;
-      image.dataset.cardfolioFallbackApplied = '1';
-      image.src = HEADER_LOGO_FALLBACK_SRC;
-    });
     brand.appendChild(image);
     topbar.appendChild(brand);
+  }
+
+  function syncBrandImages() {
+    document.querySelectorAll('img[data-cardfolio-brand]').forEach((image) => {
+      if (image.src !== new URL(BRAND_LOGO_SRC, location.href).href) image.src = BRAND_LOGO_SRC;
+    });
   }
 
   function applyWatchlistRemovals() {
@@ -102,6 +103,7 @@
     const title = document.getElementById('viewTitle');
 
     ensureHeaderLogo();
+    syncBrandImages();
 
     if (eyebrow) eyebrow.style.visibility = HIDDEN_EYEBROW_VIEWS.has(view) ? 'hidden' : '';
     if (title) title.style.visibility = HIDDEN_TITLE_VIEWS.has(view) ? 'hidden' : '';

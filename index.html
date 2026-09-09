@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Cardfolio — scan, identify and track collectible cards as a live shared-market portfolio." />
+  <meta name="application-name" content="Cardfolio" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Cardfolio" />
+  <meta name="msapplication-TileImage" content="/api/cardfolio-icon?v=20260909-official-brand-1" />
   <title>Cardfolio</title>
-  <link rel="manifest" href="/cardfolio-manifest.webmanifest" />
-  <link rel="icon" type="image/png" sizes="180x180" href="/api/cardfolio-icon?v=20260907-2" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/api/cardfolio-icon?v=20260907-2" />
+  <link rel="manifest" href="/cardfolio-manifest.webmanifest?v=20260909-official-brand-1" />
+  <link rel="icon" type="image/png" sizes="128x128" href="/api/cardfolio-icon?v=20260909-official-brand-1" />
+  <link rel="shortcut icon" type="image/png" href="/api/cardfolio-icon?v=20260909-official-brand-1" />
+  <link rel="apple-touch-icon" sizes="128x128" href="/api/cardfolio-icon?v=20260909-official-brand-1" />
   <link rel="preconnect" href="https://api.tcgdex.net" />
   <link rel="stylesheet" href="/cardfolio.css" />
   <link rel="stylesheet" href="/cardfolio-vnext.css" />
@@ -36,7 +39,7 @@
   <script defer src="/api/proxy?path=cardfolio-exact-identity-client.js"></script>
   <script defer src="/api/proxy?path=cardfolio-production-guard.js"></script>
   <script defer src="/api/proxy?path=cardfolio-market-integrity.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-ui-prune.js"></script>
+  <script defer src="/api/proxy?path=cardfolio-ui-prune.js&v=20260909-official-brand-1"></script>
   <script defer src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-intake-integrity-1"></script>
   <script defer src="/api/proxy?path=cardfolio-live-sync.js&v=20260908-1"></script>
   <script defer src="/api/proxy?path=cardfolio-marketplace-ui.js&v=20260908-1"></script>
@@ -48,7 +51,7 @@
   <div id="app" class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation">
       <button class="brand" data-view="home" aria-label="Cardfolio home">
-        <span class="brand-mark">C</span><span>Cardfolio</span>
+        <img class="brand-logo" data-cardfolio-brand src="/api/cardfolio-icon?v=20260909-official-brand-1" alt="Cardfolio" />
       </button>
       <nav class="side-nav">
         <button data-view="home" class="nav-item active"><span>⌂</span><span>Home</span></button>
@@ -80,6 +83,7 @@
   </div>
   <dialog id="authDialog" class="modal">
     <form method="dialog" class="modal-card" id="authForm">
+      <img class="auth-brand-logo" data-cardfolio-brand src="/api/cardfolio-icon?v=20260909-official-brand-1" alt="Cardfolio" />
       <div class="modal-head"><div><div class="eyebrow">Cloud sync</div><h2>Sign in to Cardfolio</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
       <p id="authExplainer" class="muted">Use a Cardfolio account to keep your private portfolio and watchlist synced across devices. Local Vault remains available without signing in.</p>
       <label>Email<input id="authEmail" type="email" autocomplete="email" required /></label>

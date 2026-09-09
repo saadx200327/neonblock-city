@@ -1,0 +1,87 @@
+name: Cardfolio production contract
+
+on:
+  push:
+    branches:
+      - cardfolio-mvp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CANONICAL_URL: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+      EXPECTED_SUPABASE_URL: https://tvxwzkununcwxiwvrslh.supabase.co
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify canonical production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+
+          root="$(mktemp)"
+          config="$(mktemp)"
+          proxy="$(mktemp)"
+          trap 'rm -f "$root" "$config" "$proxy"' EXIT
+
+          fetch_with_retry() {
+            local url="$1"
+            local output="$2"
+            local code=""
+            for attempt in 1 2 3 4 5 6; do
+              code="$(curl -sS -L --connect-timeout 10 --max-time 30 -o "$output" -w '%{http_code}' "$url" || true)"
+              [ "$code" = "200" ] && break
+              sleep 5
+            done
+            printf '%s' "$code"
+          }
+
+          root_code="$(fetch_with_retry "$CANONICAL_URL/" "$root")"
+          echo "canonical root -> HTTP ${root_code:-curl-error}"
+          [ "$root_code" = "200" ] || { echo 'canonical root unavailable'; exit 1; }
+          grep -q '<title>Cardfolio</title>' "$root" || { echo 'canonical root is not Cardfolio'; exit 1; }
+
+          config_code="$(fetch_with_retry "$CANONICAL_URL/api/config?contract=$GITHUB_SHA" "$config")"
+          echo "canonical /api/config -> HTTP ${config_code:-curl-error}"
+          [ "$config_code" = "200" ] || { echo 'canonical config unavailable'; exit 1; }
+
+          CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
+          const fs = require('fs');
+          let cfg;
+          try {
+            cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8'));
+          } catch {
+            console.error('canonical config is not valid JSON');
+            process.exit(1);
+          }
+
+          const checks = {
+            configured: cfg.configured === true,
+            expectedSupabaseProject: cfg.supabaseUrl === process.env.EXPECTED_SUPABASE_URL,
+            publishableKeyShape: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+            visionBackendExpertQueue: cfg.visionBackend === 'expert-queue',
+            paidVisionFallbackFalse: cfg.paidVisionFallback === false,
+            noServiceRoleField: !['supabaseServiceRoleKey', 'serviceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'].some((key) => key in cfg)
+          };
+
+          console.log('safe production config contract:', JSON.stringify(checks));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+
+          proxy_code="$(fetch_with_retry "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA" "$proxy")"
+          echo "canonical proxied index -> HTTP ${proxy_code:-curl-error}"
+          [ "$proxy_code" = "200" ] || { echo 'canonical proxied index unavailable'; exit 1; }
+
+          branch_sha="$(sha256sum index.html | awk '{print $1}')"
+          proxy_sha="$(sha256sum "$proxy" | awk '{print $1}')"
+          echo "branch index SHA-256: $branch_sha"
+          echo "proxy index SHA-256:  $proxy_sha"
+          [ "$branch_sha" = "$proxy_sha" ] || { echo 'canonical proxied branch source is stale or different'; exit 1; }
+
+          echo 'Cardfolio canonical production contract verified.'

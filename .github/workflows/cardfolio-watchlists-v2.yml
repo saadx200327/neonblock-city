@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           test -f cardfolio-watchlists-v2.js
           test -f cardfolio-watchlists-ios-guard.js
-          test -f cardfolio-header-logo.webp
+          test -f api/cardfolio-icon.js
           node --check cardfolio-watchlists-v2.js
           node --check cardfolio-watchlists-ios-guard.js
           node --check cardfolio-ui-prune.js
@@ -49,7 +49,8 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'cardfolio-topbar-logo' cardfolio-ui-prune.js
-          grep -Fq 'cardfolio-header-logo.webp' cardfolio-ui-prune.js
+          grep -Fq '/api/cardfolio-icon' cardfolio-ui-prune.js
+          grep -Fq 'HEADER_LOGO_FALLBACK_SRC' cardfolio-ui-prune.js
           grep -Fq "document.querySelector('.watch-v2-head .eyebrow')?.remove()" cardfolio-ui-prune.js
           grep -Fq "document.querySelector('.watch-v2-head p')?.remove()" cardfolio-ui-prune.js
           grep -Fq "Boolean(document.querySelector('.watch-list-chip'))" cardfolio-ui-prune.js

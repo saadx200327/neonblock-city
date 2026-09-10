@@ -20,6 +20,7 @@ jobs:
           BASE: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
         run: |
           set -euo pipefail
+          # Keep this probe public/read-only so it can diagnose the canonical host without Vercel secrets.
           tmp="$(mktemp)"
           trap 'rm -f "$tmp"' EXIT
           echo '=== canonical root body ==='

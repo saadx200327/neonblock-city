@@ -1,0 +1,45 @@
+name: Cardfolio canonical public probe
+
+on:
+  push:
+    branches: [cardfolio-mvp]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe canonical host, branding and startup-critical resources
+        shell: bash
+        env:
+          BASE: https://saad-cardfolio-saadahmed0020-3481s-projects.vercel.app
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          echo '=== canonical root body ==='
+          curl -fsSL --connect-timeout 10 --max-time 30 "$BASE/" -o "$tmp"
+          wc -c "$tmp"
+          cat "$tmp"
+          echo
+          echo '=== current proxied branch HTML markers ==='
+          curl -fsSL --connect-timeout 10 --max-time 30 "$BASE/api/proxy?path=index.html&probe=$GITHUB_SHA" -o "$tmp"
+          grep -Eo 'cardfolio-brand\.png[^" ]*|tesseract\.min\.js|cardfolio-shell-v21' "$tmp" | head -n 20 || true
+          echo '=== startup resource status/time ==='
+          for path in \
+            '/cardfolio-brand.png?v=20260909-brand-static-1' \
+            '/cardfolio-app.js' \
+            '/cardfolio-app-4.js' \
+            '/cardfolio-sw.js' \
+            '/api/proxy?path=cardfolio-ui-prune.js&v=20260909-brand-static-1'; do
+            curl -sS -L --connect-timeout 10 --max-time 30 -o /dev/null \
+              -w "$path -> %{http_code} %{content_type} bytes=%{size_download} start=%{time_starttransfer}s total=%{time_total}s\n" \
+              "$BASE$path" || true
+          done
+          echo '=== direct brand response headers ==='
+          curl -sS -I --connect-timeout 10 --max-time 30 "$BASE/cardfolio-brand.png?v=20260909-brand-static-1" | grep -Eia '^(HTTP/|content-type:|content-length:|cache-control:|x-vercel-|location:)' || true

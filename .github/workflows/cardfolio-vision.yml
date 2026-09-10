@@ -43,7 +43,7 @@ jobs:
           grep -Fq 'paidVisionFallback:false' api/config.js
           grep -Fq "visionBackend:'expert-queue'" cardfolio-app.js
           grep -Fq 'paidVisionFallback:false' cardfolio-app.js
-          grep -Fq "cfg={...cfg,...remote,visionBackend:'expert-queue',paidVisionFallback:false}" cardfolio-app.js
+          grep -Fq "cfg={...cfg,...remoteResult,visionBackend:'expert-queue',paidVisionFallback:false}" cardfolio-app.js
           echo 'Scan-time vision uses local fingerprints, expert-queue fail-closed browser config, and no paid GPT call.'
 
       - name: Verify private expert queue contract

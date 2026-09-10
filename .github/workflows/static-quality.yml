@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-runtime-hardening.js cardfolio-critical-fixes.js cardfolio-commercial.js cardfolio-identity-persistence.js cardfolio-exact-identity-client.js cardfolio-production-guard.js cardfolio-market-integrity.js cardfolio-sw.js; do
+          for file in cardfolio-app.js cardfolio-app-2.js cardfolio-app-3.js cardfolio-app-4.js cardfolio-fixes.js cardfolio-watchlist.js cardfolio-watchlists-v2.js cardfolio-watchlists-ios-guard.js cardfolio-grading.js cardfolio-valuation-integrity.js cardfolio-scan-review.js cardfolio-vnext.js cardfolio-product.js cardfolio-product-fixes.js cardfolio-runtime-hardening.js cardfolio-critical-fixes.js cardfolio-commercial.js cardfolio-identity-persistence.js cardfolio-exact-identity-client.js cardfolio-production-guard.js cardfolio-market-integrity.js cardfolio-sw.js; do
             test -f "$file"
             node --check "$file"
           done
@@ -41,11 +41,14 @@ jobs:
           test -f cardfolio-vnext.css
           test -f cardfolio-liquid.css
           test -f cardfolio-manifest.webmanifest
-          test -f cardfolio-icon.svg
+          test -f cardfolio-brand.png
           grep -Fq 'cardfolio-manifest.webmanifest' index.html
+          grep -Fq 'cardfolio-brand.png' index.html
           grep -Fq 'cardfolio-app.js' index.html
           grep -Fq 'cardfolio-fixes.js' index.html
-          grep -Fq 'cardfolio-watchlist.js' index.html
+          grep -Fq 'cardfolio-watchlists-v2.js' index.html
+          grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
+          ! grep -Fq 'src="/cardfolio-watchlist.js"' index.html
           grep -Fq 'cardfolio-grading.js' index.html
           grep -Fq 'cardfolio-valuation-integrity.js' index.html
           grep -Fq 'cardfolio-scan-review.js' index.html
@@ -60,14 +63,11 @@ jobs:
           grep -Fq 'cardfolio-production-guard.js' index.html
           grep -Fq 'cardfolio-sw.js' cardfolio-app.js
           grep -Fq 'cardfolio-vnext.css' cardfolio-sw.js
-          grep -Fq 'cardfolio-vnext.js' cardfolio-sw.js
           grep -Fq 'cardfolio-liquid.css' cardfolio-sw.js
-          grep -Fq 'cardfolio-product.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-product-fixes.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-runtime-hardening.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-critical-fixes.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-exact-identity-client.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-production-guard.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-app.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-app-4.js' cardfolio-sw.js
+          grep -Fq 'cardfolio-brand.png' cardfolio-sw.js
+          grep -Fq "cardfolio-shell-v21" cardfolio-sw.js
           node -e "JSON.parse(require('fs').readFileSync('cardfolio-manifest.webmanifest','utf8'))"
 
       - name: Validate Vercel production configuration
@@ -96,12 +96,14 @@ jobs:
           set -euo pipefail
           grep -Fq '@supabase/supabase-js@2.115.0' cardfolio-app.js
           grep -Fq 'import(SUPABASE_BROWSER_MODULE)' cardfolio-fixes.js
-          grep -Fq 'tesseract.js@5.1.1/dist/tesseract.min.js' index.html
+          grep -Fq 'tesseract.js@5.1.1/dist/tesseract.min.js' cardfolio-app-4.js
+          ! grep -Fq 'tesseract.min.js' index.html
+          grep -Fq 'ensureTesseract' cardfolio-app-4.js
           if grep -Fq "@supabase/supabase-js@2'" cardfolio-*.js; then
             echo 'Floating Supabase JS major-version import found.' >&2
             exit 1
           fi
-          if grep -Fq 'tesseract.js@5/dist/' index.html; then
+          if grep -Fq 'tesseract.js@5/dist/' cardfolio-app-4.js; then
             echo 'Floating Tesseract v5 import found.' >&2
             exit 1
           fi

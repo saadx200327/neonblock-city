@@ -43,7 +43,10 @@ jobs:
           test -f cardfolio-manifest.webmanifest
           test -f cardfolio-brand.png
           grep -Fq 'cardfolio-manifest.webmanifest' index.html
-          grep -Fq 'cardfolio-brand.png' index.html
+          ! grep -Fq 'cardfolio-brand.png' index.html
+          grep -Fq 'id="cardfolioBoot"' index.html
+          grep -Fq 'cardfolio-booting' index.html
+          grep -Fq 'Loading Cardfolio' index.html
           grep -Fq 'cardfolio-app.js' index.html
           grep -Fq 'cardfolio-fixes.js' index.html
           grep -Fq 'cardfolio-watchlists-v2.js' index.html

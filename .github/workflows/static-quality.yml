@@ -88,8 +88,10 @@ jobs:
           grep -Fq 'Permissions-Policy' vercel.json
           grep -Fq 'camera=(self)' vercel.json
           grep -Fq 'tvxwzkununcwxiwvrslh.supabase.co' api/config.js
-          grep -Fq 'SUPABASE_PUBLISHABLE_KEY' api/config.js
-          grep -Fq 'SUPABASE_ANON_KEY' api/config.js
+          grep -Fq 'sb_publishable_' api/config.js
+          grep -Fq "visionBackend:'expert-queue'" api/config.js
+          grep -Fq 'paidVisionFallback:false' api/config.js
+          ! grep -Fq 'SUPABASE_SERVICE_ROLE_KEY' api/config.js
           grep -Fq 'EBAY_CLIENT_ID' api/ebay.js
           grep -Fq 'EBAY_CLIENT_SECRET' api/ebay.js
 

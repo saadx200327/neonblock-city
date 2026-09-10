@@ -7,8 +7,7 @@
   const HOME_HISTORY_COPY = '<span>History begins when Cardfolio records real market observations. No synthetic backfill.</span>';
   const HOME_TIMELINE_COPY = '<div class="timeline-note">Built only from recorded Cardfolio valuations.</div>';
   const SCAN_TIPS = /<aside class="scan-tips">[\s\S]*?<\/aside>/;
-  const BRAND_LOGO_SRC = '/api/cardfolio-icon?v=20260909-official-brand-1';
-  const HEADER_LOGO_FALLBACK_SRC = '/cardfolio-header-logo.webp?v=20260909-official-brand-1';
+  const BRAND_LOGO_SRC = '/cardfolio-brand.png?v=20260909-brand-static-1';
 
   const baseHomeView = homeView;
   homeView = function () {
@@ -61,13 +60,6 @@
     document.head.appendChild(style);
   }
 
-  function armBrandFallback(image) {
-    image.onerror = () => {
-      image.onerror = null;
-      image.src = HEADER_LOGO_FALLBACK_SRC;
-    };
-  }
-
   function ensureHeaderLogo() {
     ensureBrandStyles();
     const topbar = document.querySelector('.topbar');
@@ -78,7 +70,6 @@
     brand.className = 'cardfolio-topbar-logo';
     brand.setAttribute('aria-hidden', 'true');
     const image = document.createElement('img');
-    armBrandFallback(image);
     image.src = BRAND_LOGO_SRC;
     image.alt = '';
     image.decoding = 'async';
@@ -87,9 +78,9 @@
   }
 
   function syncBrandImages() {
+    const expected = new URL(BRAND_LOGO_SRC, location.href).href;
     document.querySelectorAll('img[data-cardfolio-brand]').forEach((image) => {
-      armBrandFallback(image);
-      if (image.src !== new URL(BRAND_LOGO_SRC, location.href).href) image.src = BRAND_LOGO_SRC;
+      if (image.src !== expected) image.src = BRAND_LOGO_SRC;
     });
   }
 

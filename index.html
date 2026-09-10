@@ -8,19 +8,24 @@
   <meta name="application-name" content="Cardfolio" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Cardfolio" />
-  <meta name="msapplication-TileImage" content="/cardfolio-brand.png?v=20260909-brand-static-1" />
   <title>Cardfolio</title>
   <link rel="manifest" href="/cardfolio-manifest.webmanifest?v=20260909-brand-static-1" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/cardfolio-brand.png?v=20260909-brand-static-1" />
-  <link rel="shortcut icon" type="image/png" href="/cardfolio-brand.png?v=20260909-brand-static-1" />
-  <link rel="apple-touch-icon" sizes="192x192" href="/cardfolio-brand.png?v=20260909-brand-static-1" />
-  <link rel="preload" as="image" href="/cardfolio-brand.png?v=20260909-brand-static-1" />
   <link rel="preconnect" href="https://api.tcgdex.net" />
+  <style>
+    html.cardfolio-booting body{overflow:hidden}
+    #cardfolioBoot{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:#080a0f;color:#f6f8fb;opacity:1;visibility:visible;transition:opacity .18s ease,visibility .18s ease}
+    html:not(.cardfolio-booting) #cardfolioBoot{opacity:0;visibility:hidden;pointer-events:none}
+    #cardfolioBoot .boot-inner{display:grid;justify-items:center;gap:14px;font:700 13px/1.2 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,sans-serif;letter-spacing:.01em}
+    #cardfolioBoot .boot-spinner{width:28px;height:28px;border-radius:50%;border:3px solid rgba(255,255,255,.14);border-top-color:#d9ff5a;animation:cardfolio-spin .72s linear infinite}
+    @keyframes cardfolio-spin{to{transform:rotate(360deg)}}
+    @media(prefers-reduced-motion:reduce){#cardfolioBoot{transition:none}#cardfolioBoot .boot-spinner{animation:none;border-top-color:rgba(255,255,255,.55)}}
+  </style>
+  <script>document.documentElement.classList.add('cardfolio-booting');</script>
   <link rel="stylesheet" href="/cardfolio.css" />
   <link rel="stylesheet" href="/cardfolio-vnext.css" />
   <link rel="stylesheet" href="/cardfolio-liquid.css" />
-  <link rel="stylesheet" href="/api/proxy?path=cardfolio-market-v2.css&v=20260908-2" />
-  <link rel="stylesheet" href="/api/proxy?path=cardfolio-marketplace-ui.css&v=20260908-1" />
+  <link rel="stylesheet" href="/api/proxy?path=cardfolio-market-v2.css&v=20260908-2" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="/api/proxy?path=cardfolio-marketplace-ui.css&v=20260908-1" media="print" onload="this.media='all'" />
   <script defer src="/cardfolio-app.js"></script>
   <script defer src="/cardfolio-app-2.js"></script>
   <script defer src="/cardfolio-app-3.js"></script>
@@ -40,7 +45,7 @@
   <script defer src="/api/proxy?path=cardfolio-production-guard.js"></script>
   <script defer src="/api/proxy?path=cardfolio-market-integrity.js"></script>
   <script defer src="/api/proxy?path=cardfolio-chart-daily-average.js&v=20260909-daily-average-2"></script>
-  <script defer src="/api/proxy?path=cardfolio-ui-prune.js&v=20260909-brand-static-1"></script>
+  <script defer src="/api/proxy?path=cardfolio-ui-prune.js&v=20260910-no-logo-boot-1"></script>
   <script defer src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-intake-integrity-1"></script>
   <script defer src="/api/proxy?path=cardfolio-live-sync.js&v=20260908-1"></script>
   <script defer src="/api/proxy?path=cardfolio-marketplace-ui.js&v=20260908-1"></script>
@@ -48,12 +53,11 @@
   <script defer src="/api/proxy?path=cardfolio-watchlists-ios-guard.js&v=20260908-1"></script>
 </head>
 <body>
+  <div id="cardfolioBoot" role="status" aria-live="polite"><div class="boot-inner"><span class="boot-spinner" aria-hidden="true"></span><span>Loading Cardfolio…</span></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="app" class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation">
-      <button class="brand" data-view="home" aria-label="Cardfolio home">
-        <img class="brand-logo" data-cardfolio-brand src="/cardfolio-brand.png?v=20260909-brand-static-1" alt="Cardfolio" />
-      </button>
+      <button class="brand" data-view="home" aria-label="Cardfolio home">Cardfolio</button>
       <nav class="side-nav">
         <button data-view="home" class="nav-item active"><span>⌂</span><span>Home</span></button>
         <button data-view="portfolio" class="nav-item"><span>▦</span><span>Portfolio</span></button>
@@ -84,7 +88,6 @@
   </div>
   <dialog id="authDialog" class="modal">
     <form method="dialog" class="modal-card" id="authForm">
-      <img class="auth-brand-logo" data-cardfolio-brand src="/cardfolio-brand.png?v=20260909-brand-static-1" alt="Cardfolio" />
       <div class="modal-head"><div><div class="eyebrow">Cloud sync</div><h2>Sign in to Cardfolio</h2></div><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
       <p id="authExplainer" class="muted">Use a Cardfolio account to keep your private portfolio and watchlist synced across devices. Local Vault remains available without signing in.</p>
       <label>Email<input id="authEmail" type="email" autocomplete="email" required /></label>
@@ -142,5 +145,28 @@
       </div>
     </div>
   </dialog>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const splash = document.getElementById('cardfolioBoot');
+      const startedAt = performance.now();
+      let finished = false;
+      const reveal = () => {
+        if (finished) return;
+        finished = true;
+        root.classList.remove('cardfolio-booting');
+        if (splash) setTimeout(() => splash.remove(), 220);
+      };
+      const check = () => {
+        const content = document.getElementById('content');
+        if ((content && content.childElementCount > 0) || performance.now() - startedAt > 2500) {
+          requestAnimationFrame(reveal);
+          return;
+        }
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    })();
+  </script>
 </body>
 </html>

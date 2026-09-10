@@ -1,4 +1,26 @@
-async function scanFile(file){if(!file)return;if(!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type||'image/jpeg')){toast('Use an image file');return}if(file.size>12*1024*1024){toast('Image is too large');return}const status=$('#scanStatus');status.textContent='Preparing image…';const preview=await fileToPreview(file);state.scan={file,imageDataUrl:preview,text:'',confidence:0,fields:{}};try{if(!window.Tesseract)throw new Error('OCR library unavailable');status.textContent='Reading visible text on-device…';const result=await window.Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')status.textContent=`Reading text… ${Math.round((m.progress||0)*100)}%`}});const text=result.data.text||'',confidence=Math.round(result.data.confidence||0);state.scan.text=text;state.scan.confidence=confidence;state.scan.fields=parseOcr(text);showScanReview()}catch(err){status.textContent='OCR could not run. You can still add the card manually.';openCardDialog(null,{})}}
+let tesseractLoadPromise=null;
+function ensureTesseract(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(tesseractLoadPromise)return tesseractLoadPromise;
+  tesseractLoadPromise=new Promise((resolve,reject)=>{
+    const existing=document.querySelector('script[data-cardfolio-tesseract]');
+    if(existing){
+      existing.addEventListener('load',()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR library unavailable')),{once:true});
+      existing.addEventListener('error',()=>reject(new Error('OCR library unavailable')),{once:true});
+      return;
+    }
+    const script=document.createElement('script');
+    script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    script.async=true;
+    script.dataset.cardfolioTesseract='1';
+    script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR library unavailable'));
+    script.onerror=()=>reject(new Error('OCR library unavailable'));
+    document.head.appendChild(script);
+  }).catch(err=>{tesseractLoadPromise=null;throw err});
+  return tesseractLoadPromise;
+}
+
+async function scanFile(file){if(!file)return;if(!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type||'image/jpeg')){toast('Use an image file');return}if(file.size>12*1024*1024){toast('Image is too large');return}const status=$('#scanStatus');status.textContent='Preparing image…';const preview=await fileToPreview(file);state.scan={file,imageDataUrl:preview,text:'',confidence:0,fields:{}};try{if(!window.Tesseract){status.textContent='Loading on-device OCR…';await ensureTesseract()}status.textContent='Reading visible text on-device…';const result=await window.Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')status.textContent=`Reading text… ${Math.round((m.progress||0)*100)}%`}});const text=result.data.text||'',confidence=Math.round(result.data.confidence||0);state.scan.text=text;state.scan.confidence=confidence;state.scan.fields=parseOcr(text);showScanReview()}catch(err){status.textContent='OCR could not run. You can still add the card manually.';openCardDialog(null,{})}}
 function parseOcr(text){const clean=text.replace(/[|]/g,' ').split(/\n+/).map(x=>x.trim()).filter(Boolean);const upper=text.toUpperCase();let category='Other';for(const [cat,hints] of Object.entries(categoryHints))if(hints.some(h=>upper.includes(h))){category=cat;break}const year=(text.match(/\b(?:19|20)\d{2}(?:[-–]\d{2})?\b/)||[])[0]||'';const manufacturer=brands.find(b=>upper.includes(b))||'';const cardNo=(text.match(/(?:#|NO\.?\s*)\s*([A-Z0-9-]{1,12})\b/i)||[])[1]||'';const serial=(text.match(/\b(\d{1,4}\s*\/\s*\d{1,5})\b/)||[])[1]?.replace(/\s/g,'')||'';const subject=clean.find(line=>{const u=line.toUpperCase();return line.length>=3&&line.length<40&&!brands.some(b=>u.includes(b))&&!/^\d/.test(line)&&!['NBA','NFL','MLB','NHL','FIFA','UEFA'].some(x=>u===x)})||'';return{category,subject,year,manufacturer:manufacturer.replace('POKEMON','Pokémon'),card_number:cardNo,serial_number:serial,rookie:/\bRC\b|ROOKIE/i.test(text),autograph:/AUTOGRAPH|AUTO\b|SIGNATURE/i.test(text),relic:/RELIC|MEMORABILIA|JERSEY|PATCH/i.test(text)}}
 function showScanReview(){$('#scanReviewImage').src=state.scan.imageDataUrl;$('#rawOcr').textContent=state.scan.text||'No readable text detected.';$('#ocrConfidence').textContent=`${state.scan.confidence}%`;$('#matchPokemonBtn').classList.toggle('hidden',state.scan.fields.category!=='Pokémon');$('#pokemonMatches').innerHTML='';$('#scanReviewDialog').showModal()}
 function useScanFields(){const f=state.scan.fields;$('#scanReviewDialog').close();openCardDialog(null,{...f,condition:'Raw — unknown',quantity:1})}

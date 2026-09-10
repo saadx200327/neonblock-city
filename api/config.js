@@ -1,9 +1,9 @@
 export default function handler(req,res){
-  const supabaseUrl=process.env.SUPABASE_URL||'https://tvxwzkununcwxiwvrslh.supabase.co';
-  const configuredPublishableKey=process.env.SUPABASE_PUBLISHABLE_KEY||'';
-  const supabasePublishableKey=configuredPublishableKey.startsWith('sb_publishable_')
-    ? configuredPublishableKey
-    : 'sb_publishable_--j19axhauUMNFXCgUumMA_d1teIy0H';
+  // Cardfolio's browser config is intentionally pinned to its canonical public Supabase
+  // endpoint and publishable key. Do not inherit generic Vercel SUPABASE_* variables
+  // from unrelated projects; privileged credentials never belong in this response.
+  const supabaseUrl='https://tvxwzkununcwxiwvrslh.supabase.co';
+  const supabasePublishableKey='sb_publishable_--j19axhauUMNFXCgUumMA_d1teIy0H';
   res.setHeader('Cache-Control','no-store');
   res.status(200).json({
     configured:Boolean(supabaseUrl&&supabasePublishableKey),

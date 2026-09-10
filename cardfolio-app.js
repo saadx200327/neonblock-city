@@ -32,44 +32,64 @@ function setView(view){state.view=view;$$('[data-view]').forEach(b=>b.classList.
 async function bootstrap(){
   bindGlobalEvents();
   loadLocal();
-  await initBackend();
+  // First paint must never wait for Vercel, Supabase, auth, or image signing.
   render();
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('/cardfolio-sw.js').catch(()=>{});
+  const registerServiceWorker=()=>{
+    if('serviceWorker' in navigator) navigator.serviceWorker.register('/cardfolio-sw.js').catch(()=>{});
+  };
+  if('requestIdleCallback' in window) requestIdleCallback(registerServiceWorker,{timeout:1500});
+  else setTimeout(registerServiceWorker,0);
+  // Cloud setup and refresh happen behind the already-usable local UI.
+  initBackend().catch(()=>{});
 }
 function loadLocal(){try{state.holdings=JSON.parse(localStorage.getItem(LOCAL_HOLDINGS)||'[]');state.snapshots=JSON.parse(localStorage.getItem(LOCAL_SNAPSHOTS)||'[]');state.watchlist=JSON.parse(localStorage.getItem(LOCAL_WATCHLIST)||'[]')}catch{state.holdings=[];state.snapshots=[];state.watchlist=[]}}
 function saveLocal(){localStorage.setItem(LOCAL_HOLDINGS,JSON.stringify(state.holdings));localStorage.setItem(LOCAL_SNAPSHOTS,JSON.stringify(state.snapshots));localStorage.setItem(LOCAL_WATCHLIST,JSON.stringify(state.watchlist))}
 async function initBackend(){
   let cfg={...PUBLIC_BACKEND_CONFIG};
   try{
-    const r=await fetch('/api/config',{cache:'no-store'});
-    if(r.ok){
-      const remote=await r.json();
-      if(remote?.configured){
-        // Remote public connectivity values may refresh, but these two safety invariants
-        // are branch-owned and cannot be weakened by a stale/miswired Vercel shell.
-        cfg={...cfg,...remote,visionBackend:'expert-queue',paidVisionFallback:false};
-      }
+    // Fetch public server config and load the Supabase module in parallel instead of serially.
+    const [remoteResult,mod]=await Promise.all([
+      fetch('/api/config',{cache:'no-store'}).then(async r=>r.ok?await r.json():null).catch(()=>null),
+      import(SUPABASE_BROWSER_MODULE)
+    ]);
+    if(remoteResult?.configured){
+      cfg={...cfg,...remoteResult,visionBackend:'expert-queue',paidVisionFallback:false};
     }
-  }catch{}
-  try{
     state.config=cfg;
     if(!cfg.configured) throw new Error('not configured');
-    const {createClient}=await import(SUPABASE_BROWSER_MODULE);
-    state.supabase=createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-    const {data:{session}}=await state.supabase.auth.getSession(); state.user=session?.user||null;
-    state.supabase.auth.onAuthStateChange(async(_event,session)=>{
-      state.user=session?.user||null;
-      if(state.user) await syncCloud();
-      else loadLocal();
-      updateAuthButton();
-      render();
+    state.supabase=mod.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    const {data:{session}}=await state.supabase.auth.getSession();
+    state.user=session?.user||null;
+    const initialUserId=state.user?.id||null;
+    state.supabase.auth.onAuthStateChange((event,nextSession)=>{
+      const previousId=state.user?.id||null;
+      const nextUser=nextSession?.user||null;
+      const nextId=nextUser?.id||null;
+      state.user=nextUser;
+      // getSession() already handled this exact initial state. Avoid a duplicate cloud sync.
+      if(event==='INITIAL_SESSION'&&nextId===initialUserId){updateAuthButton();return}
+      if(event==='TOKEN_REFRESHED'&&nextId===previousId){updateAuthButton();return}
+      Promise.resolve().then(async()=>{
+        if(nextUser){await syncCloud();}
+        else{loadLocal();render();}
+        updateAuthButton();
+        render();
+      });
     });
-    state.backend='cloud'; $('#backendBadge').textContent='Supabase cloud';$('#backendBadge').className='status-pill good';
-    if(state.user) await syncCloud();
+    state.backend='cloud';
+    $('#backendBadge').textContent='Supabase cloud';
+    $('#backendBadge').className='status-pill good';
+    updateAuthButton();
+    render();
+    if(state.user){
+      await syncCloud();
+      render();
+    }
   }catch{
     state.backend='local';state.supabase=null;state.user=null;loadLocal();$('#backendBadge').textContent='Local Vault';$('#backendBadge').className='status-pill neutral';
+    updateAuthButton();
+    render();
   }
-  updateAuthButton();
 }
 async function syncCloud(){
   if(!state.supabase||!state.user) return;
@@ -80,12 +100,36 @@ async function syncCloud(){
   ]);
   if(he||se||we){toast('Cloud sync failed');return}
   state.holdings=(h||[]).map(fromDb); state.snapshots=s||[]; state.watchlist=(w||[]).map(w=>({...w,target_price:w.target_price===null?'':Number(w.target_price)}));
+  // Show cloud data immediately; image URL hydration can finish a moment later.
+  render();
   await hydrateSignedImages();
 }
 async function hydrateSignedImages(){
   if(!state.supabase||!state.user) return;
-  const paths=state.holdings.filter(h=>h.image_path).map(h=>h.image_path);
-  await Promise.all(paths.map(async path=>{const {data}=await state.supabase.storage.from('card-images').createSignedUrl(path,3600);const holding=state.holdings.find(h=>h.image_path===path);if(holding)holding.image_url=data?.signedUrl||''}));
+  const paths=[...new Set(state.holdings.filter(h=>h.image_path).map(h=>h.image_path))];
+  if(!paths.length)return;
+  const bucket=state.supabase.storage.from('card-images');
+  try{
+    if(typeof bucket.createSignedUrls==='function'){
+      const {data,error}=await bucket.createSignedUrls(paths,3600);
+      if(!error&&Array.isArray(data)){
+        data.forEach((row,index)=>{
+          const path=row?.path||paths[index];
+          if(!path)return;
+          const holding=state.holdings.find(h=>h.image_path===path);
+          if(holding)holding.image_url=row?.signedUrl||'';
+        });
+        render();
+        return;
+      }
+    }
+  }catch{}
+  await Promise.all(paths.map(async path=>{
+    const {data}=await bucket.createSignedUrl(path,3600);
+    const holding=state.holdings.find(h=>h.image_path===path);
+    if(holding)holding.image_url=data?.signedUrl||'';
+  }));
+  render();
 }
 function updateAuthButton(){
   const b=$('#authButton'); if(!b) return;

@@ -74,14 +74,24 @@ jobs:
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
 
-          proxy_code="$(fetch_with_retry "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA" "$proxy")"
-          echo "canonical proxied index -> HTTP ${proxy_code:-curl-error}"
-          [ "$proxy_code" = "200" ] || { echo 'canonical proxied index unavailable'; exit 1; }
-
           branch_sha="$(sha256sum index.html | awk '{print $1}')"
-          proxy_sha="$(sha256sum "$proxy" | awk '{print $1}')"
+          proxy_code=""
+          proxy_sha=""
+          for attempt in 1 2 3 4 5 6 7 8; do
+            proxy_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -o "$proxy" -w '%{http_code}' "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA&attempt=$attempt" || true)"
+            if [ "$proxy_code" = "200" ]; then
+              proxy_sha="$(sha256sum "$proxy" | awk '{print $1}')"
+              echo "canonical proxied index attempt $attempt -> HTTP 200 SHA-256 $proxy_sha"
+              [ "$branch_sha" = "$proxy_sha" ] && break
+            else
+              echo "canonical proxied index attempt $attempt -> HTTP ${proxy_code:-curl-error}"
+            fi
+            sleep 5
+          done
+
           echo "branch index SHA-256: $branch_sha"
-          echo "proxy index SHA-256:  $proxy_sha"
-          [ "$branch_sha" = "$proxy_sha" ] || { echo 'canonical proxied branch source is stale or different'; exit 1; }
+          echo "proxy index SHA-256:  ${proxy_sha:-unavailable}"
+          [ "$proxy_code" = "200" ] || { echo 'canonical proxied index unavailable'; exit 1; }
+          [ "$branch_sha" = "$proxy_sha" ] || { echo 'canonical proxied branch source stayed stale or different after propagation window'; exit 1; }
 
           echo 'Cardfolio canonical production contract verified.'

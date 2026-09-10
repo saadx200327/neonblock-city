@@ -42,22 +42,13 @@ jobs:
             printf '%s' "$code"
           }
 
-          root_code="$(fetch_with_retry "$CANONICAL_URL/" "$root")"
-          echo "canonical root -> HTTP ${root_code:-curl-error}"
-          [ "$root_code" = "200" ] || { echo 'canonical root unavailable'; exit 1; }
-          grep -q '<title>Cardfolio</title>' "$root" || { echo 'canonical root is not Cardfolio'; exit 1; }
-
-          config_code="$(fetch_with_retry "$CANONICAL_URL/api/config?contract=$GITHUB_SHA" "$config")"
-          echo "canonical /api/config -> HTTP ${config_code:-curl-error}"
-          [ "$config_code" = "200" ] || { echo 'canonical config unavailable'; exit 1; }
-
-          CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
+          config_contract_ok() {
+            CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
           const fs = require('fs');
           let cfg;
           try {
             cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8'));
           } catch {
-            console.error('canonical config is not valid JSON');
             process.exit(1);
           }
 
@@ -69,16 +60,48 @@ jobs:
             paidVisionFallbackFalse: cfg.paidVisionFallback === false,
             noServiceRoleField: !['supabaseServiceRoleKey', 'serviceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'].some((key) => key in cfg)
           };
-
-          console.log('safe production config contract:', JSON.stringify(checks));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+          }
+
+          root_code="$(fetch_with_retry "$CANONICAL_URL/" "$root")"
+          echo "canonical root -> HTTP ${root_code:-curl-error}"
+          [ "$root_code" = "200" ] || { echo 'canonical root unavailable'; exit 1; }
+          grep -q '<title>Cardfolio</title>' "$root" || { echo 'canonical root is not Cardfolio'; exit 1; }
+
+          config_ready=0
+          config_code=""
+          for attempt in 1 2 3 4 5 6 7 8; do
+            config_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' -o "$config" -w '%{http_code}' "$CANONICAL_URL/api/config?contract=$GITHUB_SHA&attempt=$attempt" || true)"
+            if [ "$config_code" = "200" ] && config_contract_ok; then
+              config_ready=1
+              echo "canonical /api/config attempt $attempt -> ready"
+              break
+            fi
+            echo "canonical /api/config attempt $attempt -> not ready (HTTP ${config_code:-curl-error})"
+            [ "$attempt" -eq 8 ] || sleep 5
+          done
+          [ "$config_ready" = "1" ] || { echo 'canonical config stayed unavailable or out of contract after propagation window'; exit 1; }
+
+          CONFIG_FILE="$config" EXPECTED_SUPABASE_URL="$EXPECTED_SUPABASE_URL" node <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE, 'utf8'));
+          const checks = {
+            configured: cfg.configured === true,
+            expectedSupabaseProject: cfg.supabaseUrl === process.env.EXPECTED_SUPABASE_URL,
+            publishableKeyShape: typeof cfg.supabasePublishableKey === 'string' && cfg.supabasePublishableKey.startsWith('sb_publishable_'),
+            visionBackendExpertQueue: cfg.visionBackend === 'expert-queue',
+            paidVisionFallbackFalse: cfg.paidVisionFallback === false,
+            noServiceRoleField: !['supabaseServiceRoleKey', 'serviceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'].some((key) => key in cfg)
+          };
+          console.log('safe production config contract:', JSON.stringify(checks));
           NODE
 
           branch_sha="$(sha256sum index.html | awk '{print $1}')"
           proxy_code=""
           proxy_sha=""
           for attempt in 1 2 3 4 5 6 7 8; do
-            proxy_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -o "$proxy" -w '%{http_code}' "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA&attempt=$attempt" || true)"
+            proxy_code="$(curl -sS -L --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' -o "$proxy" -w '%{http_code}' "$CANONICAL_URL/api/proxy?path=index.html&sha=$GITHUB_SHA&attempt=$attempt" || true)"
             if [ "$proxy_code" = "200" ]; then
               proxy_sha="$(sha256sum "$proxy" | awk '{print $1}')"
               echo "canonical proxied index attempt $attempt -> HTTP 200 SHA-256 $proxy_sha"
@@ -86,7 +109,7 @@ jobs:
             else
               echo "canonical proxied index attempt $attempt -> HTTP ${proxy_code:-curl-error}"
             fi
-            sleep 5
+            [ "$attempt" -eq 8 ] || sleep 5
           done
 
           echo "branch index SHA-256: $branch_sha"

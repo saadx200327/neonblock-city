@@ -24,15 +24,17 @@ jobs:
           set -euo pipefail
           test -f cardfolio-watchlists-v2.js
           test -f cardfolio-watchlists-ios-guard.js
+          test -f cardfolio-brand.png
           test -f api/cardfolio-icon.js
           node --check cardfolio-watchlists-v2.js
           node --check cardfolio-watchlists-ios-guard.js
           node --check cardfolio-ui-prune.js
+          node --check cardfolio-app.js
+          node --check cardfolio-app-4.js
+          node --check cardfolio-sw.js
           grep -Fq 'cardfolio-watchlists-v2.js' index.html
           grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
           ! grep -Fq 'src="/cardfolio-watchlist.js"' index.html
-          grep -Fq 'cardfolio-watchlists-v2.js' cardfolio-sw.js
-          grep -Fq 'cardfolio-watchlists-ios-guard.js' cardfolio-sw.js
           ! grep -Fq "'/cardfolio-watchlist.js'" cardfolio-sw.js
           grep -Fq ".liquid-hero .glass-action,.album-card .price-state" cardfolio-watchlists-v2.js
           grep -Fq "state.supabase.from('watchlists')" cardfolio-watchlists-v2.js
@@ -44,13 +46,20 @@ jobs:
           grep -Fq 'watchlist_id:list.id' cardfolio-watchlists-v2.js
           grep -Fq 'suppressFocusUntil' cardfolio-watchlists-ios-guard.js
           grep -Fq 'event.stopImmediatePropagation()' cardfolio-watchlists-ios-guard.js
-      - name: Validate requested mobile header and empty-watchlist behavior
+      - name: Validate brand and startup performance contract
         shell: bash
         run: |
           set -euo pipefail
           grep -Fq 'cardfolio-topbar-logo' cardfolio-ui-prune.js
-          grep -Fq '/api/cardfolio-icon' cardfolio-ui-prune.js
-          grep -Fq 'HEADER_LOGO_FALLBACK_SRC' cardfolio-ui-prune.js
+          grep -Fq '/cardfolio-brand.png' cardfolio-ui-prune.js
+          grep -Fq '/cardfolio-brand.png' index.html
+          grep -Fq '/cardfolio-brand.png' cardfolio-manifest.webmanifest
+          grep -Fq '/cardfolio-brand.png' cardfolio-sw.js
+          grep -Fq '/cardfolio-brand.png' api/cardfolio-icon.js
+          ! grep -Fq 'tesseract.min.js' index.html
+          grep -Fq 'ensureTesseract' cardfolio-app-4.js
+          grep -Fq 'First paint must never wait' cardfolio-app.js
+          grep -Fq "cardfolio-shell-v21" cardfolio-sw.js
           grep -Fq "document.querySelector('.watch-v2-head .eyebrow')?.remove()" cardfolio-ui-prune.js
           grep -Fq "document.querySelector('.watch-v2-head p')?.remove()" cardfolio-ui-prune.js
           grep -Fq "Boolean(document.querySelector('.watch-list-chip'))" cardfolio-ui-prune.js

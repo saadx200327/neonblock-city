@@ -7,7 +7,9 @@
   const HOME_HISTORY_COPY = '<span>History begins when Cardfolio records real market observations. No synthetic backfill.</span>';
   const HOME_TIMELINE_COPY = '<div class="timeline-note">Built only from recorded Cardfolio valuations.</div>';
   const SCAN_TIPS = /<aside class="scan-tips">[\s\S]*?<\/aside>/;
-  const BRAND_LOGO_SRC = '/cardfolio-brand.png?v=20260909-brand-static-1';
+  // The canonical Cardfolio host proxies branch files and does not serve newly-added
+  // binary paths. Use the image embedded by cardfolio-app.js so branding cannot 404.
+  const BRAND_LOGO_SRC = window.CARDFOLIO_BRAND_DATA_URI || '';
 
   const baseHomeView = homeView;
   homeView = function () {
@@ -63,7 +65,7 @@
   function ensureHeaderLogo() {
     ensureBrandStyles();
     const topbar = document.querySelector('.topbar');
-    if (!topbar) return;
+    if (!topbar || !BRAND_LOGO_SRC) return;
     let brand = topbar.querySelector('.cardfolio-topbar-logo');
     if (brand) return;
     brand = document.createElement('div');
@@ -78,9 +80,9 @@
   }
 
   function syncBrandImages() {
-    const expected = new URL(BRAND_LOGO_SRC, location.href).href;
+    if (!BRAND_LOGO_SRC) return;
     document.querySelectorAll('img[data-cardfolio-brand]').forEach((image) => {
-      if (image.src !== expected) image.src = BRAND_LOGO_SRC;
+      if (image.src !== BRAND_LOGO_SRC) image.src = BRAND_LOGO_SRC;
     });
   }
 

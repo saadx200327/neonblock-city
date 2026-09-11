@@ -22,7 +22,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'cardfolio-chart-daily-average.js' index.html
+          # The chart enhancer is deliberately lazy so Home startup does not wait on
+          # another GitHub-backed proxy request. Validate the on-demand owning layer.
+          grep -Fq "loadProxy('cardfolio-chart-daily-average.js'" cardfolio-critical-fixes.js
+          ! grep -Fq 'cardfolio-chart-daily-average.js' index.html
           node --check cardfolio-chart-daily-average.js
           node <<'NODE'
           const fs=require('fs');

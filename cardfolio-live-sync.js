@@ -67,3 +67,17 @@ window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
   script.dataset.cardfolioMarketExperience='1';
   document.head.appendChild(script);
 })();
+
+/* Mobile product upgrades. These are presentation/input layers only; they do not
+   change canonical pricing authority or delete/overwrite portfolio data. */
+(function loadCardfolioMobileUpgrades(){
+  const scripts=[
+    ['/cardfolio-scanner-native.js?v=20260911-1','cardfolioScannerNative'],
+    ['/cardfolio-locale.js?v=20260911-1','cardfolioLocale'],
+    ['/cardfolio-market-live-ui.js?v=20260911-1','cardfolioMarketLiveUi']
+  ];
+  for(const [src,key] of scripts){
+    if(document.querySelector(`script[data-${key}]`))continue;
+    const script=document.createElement('script');script.src=src;script.async=false;script.dataset[key]='1';document.head.appendChild(script);
+  }
+})();

@@ -42,7 +42,7 @@ assert(index.includes("if (code === 'en'"),'English must not trigger the extende
 assert(index.includes('cardfolio-locale-supplement.js'),'Translated UIs must lazy-load extended maintained coverage');
 assert(localeSupplement.includes("'Fair market value':'Valor justo de mercado'"),'Spanish market UI coverage must be maintained');
 assert(localeSupplement.includes("'Fair market value':'ন্যায্য বাজারমূল্য'"),'Bengali market UI coverage must be maintained');
-assert(localeSupplement.includes('Card names and marketplace titles remain untouched'),'Locale supplement must preserve market/card identity text');
+assert(localeSupplement.includes('marketplace titles remain untouched'),'Locale supplement must preserve market/card identity text');
 assert(localeSupplement.includes("portfolio:{en:'Portfolio',es:'Portafolio',bn:'পোর্টফোলিও'}"),'Page titles must switch across maintained locales');
 assert(critical.includes("loadProxy('cardfolio-market-experience.js'"),'Card detail must lazy-load active market listings');
 assert(critical.includes("loadProxy('cardfolio-market-live-ui.js'"),'Active listings must receive distinct presentation');

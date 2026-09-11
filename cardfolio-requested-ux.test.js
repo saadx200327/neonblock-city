@@ -12,8 +12,16 @@ for(const noncritical of ['cardfolio-home-ux.js','cardfolio-live-sync.js','cardf
   assert(!index.includes(`<script defer src="/api/proxy?path=${noncritical}`),`${noncritical} must not block initial render`);
 }
 for(const required of ['cardfolio-identity-persistence.js','cardfolio-exact-identity-client.js','cardfolio-production-guard.js','cardfolio-save-stack-guard.js']){
-  assert(index.includes(`<script defer src="/api/proxy?path=${required}`),`${required} must remain startup-protected`);
+  assert(index.includes(`path=${required}`),`${required} safety guard must remain wired`);
 }
+assert(!index.includes('<script defer src="/api/proxy?path=cardfolio-identity-persistence.js'),'slow proxy guards must not block DOMContentLoaded');
+assert(!index.includes('<script defer src="/api/proxy?path=cardfolio-exact-identity-client.js'),'slow proxy guards must not block DOMContentLoaded');
+assert(!index.includes('<script defer src="/api/proxy?path=cardfolio-production-guard.js'),'slow proxy guards must not block DOMContentLoaded');
+assert(!index.includes('<script defer src="/api/proxy?path=cardfolio-save-stack-guard.js'),'save guard must not block first paint');
+assert(index.includes('cardfolio-card-image-viewer.js'),'card image viewer must be lazy-wired');
+assert(index.includes('#cardDetailContent .detail-image img'),'detail image must trigger zoom viewer');
+assert(index.includes('window.cardfolioCardImageViewerVersion'),'first tap must replay after viewer loads');
+assert(index.includes('performance.now() - startedAt > 650'),'boot overlay fallback must remain short');
 assert(critical.includes('const RECENT_MS=72*60*60*1000'),'Recently Added must expire at 72 hours');
 assert(critical.includes('card.remove()'),'Recently Added removes cards only from the rendered recent grid');
 assert(!/state\.holdings\s*=\s*\(state\?\.holdings.*RECENT_MS/.test(critical),'Recent expiry must not delete holdings');

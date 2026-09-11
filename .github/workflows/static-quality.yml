@@ -49,8 +49,10 @@ jobs:
           grep -Fq 'Loading Cardfolio' index.html
           grep -Fq 'cardfolio-app.js' index.html
           grep -Fq 'cardfolio-fixes.js' index.html
-          grep -Fq 'cardfolio-watchlists-v2.js' index.html
-          grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
+          grep -Fq "loadProxy('cardfolio-watchlists-v2.js'" cardfolio-critical-fixes.js
+          grep -Fq "loadProxy('cardfolio-watchlists-ios-guard.js'" cardfolio-critical-fixes.js
+          ! grep -Fq 'cardfolio-watchlists-v2.js' index.html
+          ! grep -Fq 'cardfolio-watchlists-ios-guard.js' index.html
           ! grep -Fq 'src="/cardfolio-watchlist.js"' index.html
           grep -Fq 'cardfolio-grading.js' index.html
           grep -Fq 'cardfolio-valuation-integrity.js' index.html

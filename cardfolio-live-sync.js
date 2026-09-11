@@ -1,13 +1,13 @@
 /* Cardfolio live cloud refresh.
-   Keeps long-lived iOS/PWA sessions in sync with server-side expert review and market pricing.
-   This is intentionally read-only: syncCloud remains the single cloud hydration authority. */
+   Keeps long-lived iOS/PWA sessions in sync with server-side review and market pricing.
+   Loaded after first paint; it does not own scanner, locale, market UI, or startup rendering. */
 (function(){
 'use strict';
 
 let lastRefreshAt=0;
 let inFlight=null;
-const MIN_GAP_MS=15000;
-const POLL_MS=60000;
+const MIN_GAP_MS=20000;
+const POLL_MS=90000;
 
 function activeView(){
   try{
@@ -15,6 +15,14 @@ function activeView(){
     if(typeof state!=='undefined'&&state?.currentView)return state.currentView;
   }catch{}
   return document.querySelector('.mobile-nav button.active,[data-view].active')?.dataset?.view||'home';
+}
+function fingerprint(){
+  try{
+    return JSON.stringify((state?.holdings||[]).map(h=>[
+      h.id,h.updated_at,h.canonical_card_id,h.market_value,h.valuation_status,h.image_path,
+      h?._canonical?.current_price,h?._canonical?.valuation_status,h?._canonical?.last_market_check
+    ]));
+  }catch{return ''}
 }
 
 async function refreshCloud(reason='timer',force=false){
@@ -28,12 +36,13 @@ async function refreshCloud(reason='timer',force=false){
 
     inFlight=(async()=>{
       try{
-        const view=activeView();
+        const view=activeView(),before=fingerprint();
         await syncCloud();
         lastRefreshAt=Date.now();
-        if(typeof setView==='function')setView(view);
-        document.dispatchEvent(new CustomEvent('cardfolio:cloud-refreshed',{detail:{reason,at:new Date().toISOString()}}));
-        return true;
+        const changed=before!==fingerprint();
+        if(changed&&typeof setView==='function')setView(view);
+        document.dispatchEvent(new CustomEvent('cardfolio:cloud-refreshed',{detail:{reason,changed,at:new Date().toISOString()}}));
+        return changed;
       }catch(error){
         console.warn('Cardfolio background cloud refresh deferred',error);
         return false;
@@ -49,34 +58,9 @@ async function refreshCloud(reason='timer',force=false){
   }
 }
 
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshCloud('visible',true);});
-window.addEventListener('focus',()=>void refreshCloud('focus',true));
-window.addEventListener('pageshow',()=>void refreshCloud('pageshow',true));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshCloud('visible',false);});
+window.addEventListener('focus',()=>void refreshCloud('focus',false));
+window.addEventListener('pageshow',()=>void refreshCloud('pageshow',false));
 setInterval(()=>void refreshCloud('timer',false),POLL_MS);
-
 window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
-})();
-
-/* Loaded through the branch proxy because the canonical Vercel project is a stable
-   shell; branch-only enhancement files are not guaranteed to exist as direct static assets. */
-(function loadCardfolioMarketExperience(){
-  if(document.querySelector('script[data-cardfolio-market-experience]'))return;
-  const script=document.createElement('script');
-  script.src='/api/proxy?path=cardfolio-market-experience.js&v=20260911-proxy-1';
-  script.async=false;
-  script.dataset.cardfolioMarketExperience='1';
-  document.head.appendChild(script);
-})();
-
-/* Mobile product upgrades. Presentation/input only; canonical pricing remains server authoritative. */
-(function loadCardfolioMobileUpgrades(){
-  const scripts=[
-    ['/api/proxy?path=cardfolio-scanner-native.js&v=20260911-proxy-1','cardfolioScannerNative'],
-    ['/api/proxy?path=cardfolio-locale.js&v=20260911-proxy-1','cardfolioLocale'],
-    ['/api/proxy?path=cardfolio-market-live-ui.js&v=20260911-proxy-1','cardfolioMarketLiveUi']
-  ];
-  for(const [src,key] of scripts){
-    if(document.querySelector(`script[data-${key}]`))continue;
-    const script=document.createElement('script');script.src=src;script.async=false;script.dataset[key]='1';document.head.appendChild(script);
-  }
 })();

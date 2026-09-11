@@ -22,6 +22,7 @@ jobs:
         run: |
           node --check cardfolio-critical-fixes.js
           node --check cardfolio-live-sync.js
+          node --check cardfolio-locale-supplement.js
           node --check cardfolio-requested-ux.test.js
       - name: Requested UX contract
         run: node cardfolio-requested-ux.test.js

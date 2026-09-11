@@ -90,11 +90,13 @@
   }
 
   function loadCardImageViewer() {
-    if (document.querySelector('script[data-cardfolio-card-image-viewer]') || window.cardfolioCardImageViewerVersion) return;
+    const existing = document.querySelector('script[data-cardfolio-card-image-viewer]');
+    if (window.cardfolioCardImageViewerVersion === '20260910-2') return;
+    if (existing) existing.remove();
     const script = document.createElement('script');
-    script.src = '/api/proxy?path=cardfolio-card-image-viewer.js&v=20260910-card-image-viewer-1';
+    script.src = '/api/proxy?path=cardfolio-card-image-viewer.js&v=20260910-card-image-viewer-2';
     script.async = false;
-    script.dataset.cardfolioCardImageViewer = '1';
+    script.dataset.cardfolioCardImageViewer = '2';
     script.onerror = () => console.error('Cardfolio card image viewer failed to load.');
     document.head.appendChild(script);
   }

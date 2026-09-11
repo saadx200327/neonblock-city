@@ -40,6 +40,39 @@
       script.onerror = () => console.warn('Cardfolio extended locale coverage deferred.');
       document.head.appendChild(script);
     });
+
+    // The image viewer is interaction-only. Preload it as soon as a card is opened,
+    // but never make Home/Portfolio first paint wait for the GitHub-backed proxy.
+    (() => {
+      let viewerPromise = null;
+      const ensureViewer = () => {
+        if (window.cardfolioCardImageViewerVersion) return Promise.resolve();
+        if (viewerPromise) return viewerPromise;
+        viewerPromise = new Promise((resolve,reject) => {
+          const script = document.createElement('script');
+          script.src = '/api/proxy?path=cardfolio-card-image-viewer.js&v=20260911-zoom-restore-1';
+          script.async = true;
+          script.dataset.cardfolioImageViewer = '1';
+          script.onload = resolve;
+          script.onerror = () => { viewerPromise = null; reject(new Error('Card image viewer failed to load')); };
+          document.head.appendChild(script);
+        }).catch(error => console.warn('Cardfolio image viewer deferred', error));
+        return viewerPromise;
+      };
+      document.addEventListener('click', event => {
+        const cardTrigger = event.target?.closest?.('[data-detail-card],.holding[data-card-id]');
+        if (cardTrigger) { void ensureViewer(); return; }
+        const image = event.target?.closest?.('#cardDetailContent .detail-image img,#assetDetailContent .asset-image-wrap img');
+        if (!image || window.cardfolioCardImageViewerVersion) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        void ensureViewer().then(() => {
+          if (window.cardfolioCardImageViewerVersion && image.isConnected) requestAnimationFrame(() => image.click());
+        });
+      }, true);
+      window.cardfolioEnsureImageViewer = ensureViewer;
+    })();
   </script>
   <link rel="stylesheet" href="/cardfolio.css" />
   <link rel="stylesheet" href="/cardfolio-vnext.css" />
@@ -57,12 +90,12 @@
   <script defer src="/cardfolio-product-fixes.js"></script>
   <script defer src="/cardfolio-runtime-hardening.js"></script>
   <script defer src="/cardfolio-critical-fixes.js?v=20260911-deep-1"></script>
-  <!-- Only identity/save/security guards remain on the proxy-backed startup path.
-       Market, watchlist, background sync, chart and presentation upgrades load on demand. -->
-  <script defer src="/api/proxy?path=cardfolio-identity-persistence.js&v=20260911-startup-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-exact-identity-client.js&v=20260911-startup-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-production-guard.js&v=20260911-startup-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260911-startup-1"></script>
+  <!-- These safety guards no longer block DOMContentLoaded/first paint. They fetch in
+       parallel and harden interactions before a user can realistically reach them. -->
+  <script async fetchpriority="low" src="/api/proxy?path=cardfolio-identity-persistence.js&v=20260911-startup-2"></script>
+  <script async fetchpriority="low" src="/api/proxy?path=cardfolio-exact-identity-client.js&v=20260911-startup-2"></script>
+  <script async fetchpriority="low" src="/api/proxy?path=cardfolio-production-guard.js&v=20260911-startup-2"></script>
+  <script async src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260911-startup-2"></script>
 </head>
 <body>
   <div id="cardfolioBoot" role="status" aria-live="polite"><div class="boot-inner"><span class="boot-spinner" aria-hidden="true"></span><span>Loading Cardfolio…</span></div></div>
@@ -167,11 +200,11 @@
         if (finished) return;
         finished = true;
         root.classList.remove('cardfolio-booting');
-        if (splash) setTimeout(() => splash.remove(), 180);
+        if (splash) setTimeout(() => splash.remove(), 140);
       };
       const check = () => {
         const content = document.getElementById('content');
-        if ((content && content.childElementCount > 0) || performance.now() - startedAt > 1000) {
+        if ((content && content.childElementCount > 0) || performance.now() - startedAt > 650) {
           requestAnimationFrame(reveal);
           return;
         }

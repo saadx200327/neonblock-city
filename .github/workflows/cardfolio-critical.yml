@@ -41,7 +41,7 @@ jobs:
           grep -Fq 'cardfolio-critical-fixes.js' index.html
           grep -Fq 'api/proxy?path=cardfolio-exact-identity-client.js' index.html
           grep -Fq 'api/proxy?path=cardfolio-production-guard.js' index.html
-          grep -Fq 'api/proxy?path=cardfolio-market-v2.css' index.html
+          grep -Fq "loadProxyCss('cardfolio-market-v2.css'" cardfolio-critical-fixes.js
           grep -Fq 'robustSaveHolding' cardfolio-critical-fixes.js
           grep -Fq 'signInWithOAuth' cardfolio-critical-fixes.js
           grep -Fq 'skipBrowserRedirect:true' cardfolio-critical-fixes.js

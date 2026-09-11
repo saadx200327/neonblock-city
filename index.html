@@ -26,9 +26,6 @@
   <link rel="stylesheet" href="/cardfolio.css" />
   <link rel="stylesheet" href="/cardfolio-vnext.css" />
   <link rel="stylesheet" href="/cardfolio-liquid.css" />
-  <link rel="stylesheet" href="/api/proxy?path=cardfolio-home-ux.css&v=20260911-proxy-2" />
-  <link rel="stylesheet" href="/api/proxy?path=cardfolio-market-v2.css&v=20260908-2" media="print" onload="this.media='all'" />
-  <link rel="stylesheet" href="/api/proxy?path=cardfolio-marketplace-ui.css&v=20260908-1" media="print" onload="this.media='all'" />
   <script defer src="/cardfolio-app.js"></script>
   <script defer src="/cardfolio-app-2.js"></script>
   <script defer src="/cardfolio-app-3.js"></script>
@@ -41,20 +38,13 @@
   <script defer src="/cardfolio-product.js"></script>
   <script defer src="/cardfolio-product-fixes.js"></script>
   <script defer src="/cardfolio-runtime-hardening.js"></script>
-  <script defer src="/cardfolio-critical-fixes.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-commercial.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-identity-persistence.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-exact-identity-client.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-production-guard.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-market-integrity.js"></script>
-  <script defer src="/api/proxy?path=cardfolio-chart-daily-average.js&v=20260909-daily-average-2"></script>
-  <script defer src="/api/proxy?path=cardfolio-ui-prune.js&v=20260911-title-perf-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260907-intake-integrity-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-live-sync.js&v=20260911-proxy-2"></script>
-  <script defer src="/api/proxy?path=cardfolio-marketplace-ui.js&v=20260908-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-watchlists-v2.js&v=20260908-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-watchlists-ios-guard.js&v=20260908-1"></script>
-  <script defer src="/api/proxy?path=cardfolio-home-ux.js&v=20260911-proxy-2"></script>
+  <script defer src="/cardfolio-critical-fixes.js?v=20260911-deep-1"></script>
+  <!-- Only identity/save/security guards remain on the proxy-backed startup path.
+       Market, watchlist, background sync, chart and presentation upgrades load on demand. -->
+  <script defer src="/api/proxy?path=cardfolio-identity-persistence.js&v=20260911-startup-1"></script>
+  <script defer src="/api/proxy?path=cardfolio-exact-identity-client.js&v=20260911-startup-1"></script>
+  <script defer src="/api/proxy?path=cardfolio-production-guard.js&v=20260911-startup-1"></script>
+  <script defer src="/api/proxy?path=cardfolio-save-stack-guard.js&v=20260911-startup-1"></script>
 </head>
 <body>
   <div id="cardfolioBoot" role="status" aria-live="polite"><div class="boot-inner"><span class="boot-spinner" aria-hidden="true"></span><span>Loading Cardfolio…</span></div></div>
@@ -159,11 +149,11 @@
         if (finished) return;
         finished = true;
         root.classList.remove('cardfolio-booting');
-        if (splash) setTimeout(() => splash.remove(), 220);
+        if (splash) setTimeout(() => splash.remove(), 180);
       };
       const check = () => {
         const content = document.getElementById('content');
-        if ((content && content.childElementCount > 0) || performance.now() - startedAt > 1200) {
+        if ((content && content.childElementCount > 0) || performance.now() - startedAt > 1000) {
           requestAnimationFrame(reveal);
           return;
         }

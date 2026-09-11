@@ -89,6 +89,16 @@
     document.head.appendChild(script);
   }
 
+  function loadCardImageViewer() {
+    if (document.querySelector('script[data-cardfolio-card-image-viewer]') || window.cardfolioCardImageViewerVersion) return;
+    const script = document.createElement('script');
+    script.src = '/api/proxy?path=cardfolio-card-image-viewer.js&v=20260910-card-image-viewer-1';
+    script.async = false;
+    script.dataset.cardfolioCardImageViewer = '1';
+    script.onerror = () => console.error('Cardfolio card image viewer failed to load.');
+    document.head.appendChild(script);
+  }
+
   function observeDynamicUi() {
     const root = document.getElementById('app') || document.body;
     if (!root || root.dataset.cardfolioUiPruneObserved) return;
@@ -110,8 +120,10 @@
     requestAnimationFrame(applyMarkedRemovals);
     observeDynamicUi();
     loadIosCropEditor();
+    loadCardImageViewer();
   });
 
   loadSaveStackGuard();
   loadIosCropEditor();
+  loadCardImageViewer();
 })();

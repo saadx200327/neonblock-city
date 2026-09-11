@@ -23,6 +23,24 @@
     @media(prefers-reduced-motion:reduce){#cardfolioBoot{transition:none}#cardfolioBoot .boot-spinner{animation:none;border-top-color:rgba(255,255,255,.55)}}
   </style>
   <script>document.documentElement.classList.add('cardfolio-booting');</script>
+  <script>
+    // Keep English startup free of another proxy request. The supplement only loads
+    // after the user selects a supported translated UI (or restores one on reload).
+    document.addEventListener('cardfolio:locale-changed', event => {
+      const code = event.detail?.locale || 'en';
+      if (window.cardfolioLocaleSupplement) {
+        window.cardfolioLocaleSupplement.apply(code);
+        return;
+      }
+      if (code === 'en' || document.querySelector('script[data-cardfolio-locale-supplement]')) return;
+      const script = document.createElement('script');
+      script.src = '/api/proxy?path=cardfolio-locale-supplement.js&v=20260911-locale-1';
+      script.async = true;
+      script.dataset.cardfolioLocaleSupplement = '1';
+      script.onerror = () => console.warn('Cardfolio extended locale coverage deferred.');
+      document.head.appendChild(script);
+    });
+  </script>
   <link rel="stylesheet" href="/cardfolio.css" />
   <link rel="stylesheet" href="/cardfolio-vnext.css" />
   <link rel="stylesheet" href="/cardfolio-liquid.css" />

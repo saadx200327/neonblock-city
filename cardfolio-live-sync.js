@@ -57,24 +57,23 @@ setInterval(()=>void refreshCloud('timer',false),POLL_MS);
 window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
 })();
 
-/* Loaded after the existing market-integrity layer so it can safely improve only
-   the card-detail market presentation without changing canonical valuation data. */
+/* Loaded through the branch proxy because the canonical Vercel project is a stable
+   shell; branch-only enhancement files are not guaranteed to exist as direct static assets. */
 (function loadCardfolioMarketExperience(){
   if(document.querySelector('script[data-cardfolio-market-experience]'))return;
   const script=document.createElement('script');
-  script.src='/cardfolio-market-experience.js?v=20260908-1';
+  script.src='/api/proxy?path=cardfolio-market-experience.js&v=20260911-proxy-1';
   script.async=false;
   script.dataset.cardfolioMarketExperience='1';
   document.head.appendChild(script);
 })();
 
-/* Mobile product upgrades. These are presentation/input layers only; they do not
-   change canonical pricing authority or delete/overwrite portfolio data. */
+/* Mobile product upgrades. Presentation/input only; canonical pricing remains server authoritative. */
 (function loadCardfolioMobileUpgrades(){
   const scripts=[
-    ['/cardfolio-scanner-native.js?v=20260911-1','cardfolioScannerNative'],
-    ['/cardfolio-locale.js?v=20260911-1','cardfolioLocale'],
-    ['/cardfolio-market-live-ui.js?v=20260911-1','cardfolioMarketLiveUi']
+    ['/api/proxy?path=cardfolio-scanner-native.js&v=20260911-proxy-1','cardfolioScannerNative'],
+    ['/api/proxy?path=cardfolio-locale.js&v=20260911-proxy-1','cardfolioLocale'],
+    ['/api/proxy?path=cardfolio-market-live-ui.js&v=20260911-proxy-1','cardfolioMarketLiveUi']
   ];
   for(const [src,key] of scripts){
     if(document.querySelector(`script[data-${key}]`))continue;

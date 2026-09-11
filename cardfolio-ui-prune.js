@@ -3,7 +3,8 @@
   'use strict';
 
   const HIDDEN_EYEBROW_VIEWS = new Set(['home', 'portfolio', 'scan', 'watchlist']);
-  const HIDDEN_TITLE_VIEWS = new Set(['portfolio', 'watchlist']);
+  // Keep the designated page title visible on every tab (Home, Portfolio, Watchlist, Scan, Market, etc.).
+  const HIDDEN_TITLE_VIEWS = new Set();
   const HOME_HISTORY_COPY = '<span>History begins when Cardfolio records real market observations. No synthetic backfill.</span>';
   const HOME_TIMELINE_COPY = '<div class="timeline-note">Built only from recorded Cardfolio valuations.</div>';
   const SCAN_TIPS = /<aside class="scan-tips">[\s\S]*?<\/aside>/;
@@ -70,7 +71,8 @@
   };
 
   function loadSaveStackGuard() {
-    if (document.querySelector('script[data-cardfolio-save-stack-guard]')) return;
+    // index.html already loads this guard. Do not issue a duplicate proxy request.
+    if (document.querySelector('script[data-cardfolio-save-stack-guard],script[src*="cardfolio-save-stack-guard.js"]')) return;
     const script = document.createElement('script');
     script.src = '/api/proxy?path=cardfolio-save-stack-guard.js';
     script.async = false;
@@ -101,6 +103,15 @@
     document.head.appendChild(script);
   }
 
+  function scheduleNonCriticalEnhancers() {
+    const run = () => {
+      loadIosCropEditor();
+      loadCardImageViewer();
+    };
+    if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 1800 });
+    else setTimeout(run, 650);
+  }
+
   function observeDynamicUi() {
     const root = document.getElementById('app') || document.body;
     if (!root || root.dataset.cardfolioUiPruneObserved) return;
@@ -121,11 +132,8 @@
     applyMarkedRemovals();
     requestAnimationFrame(applyMarkedRemovals);
     observeDynamicUi();
-    loadIosCropEditor();
-    loadCardImageViewer();
+    scheduleNonCriticalEnhancers();
   });
 
   loadSaveStackGuard();
-  loadIosCropEditor();
-  loadCardImageViewer();
 })();

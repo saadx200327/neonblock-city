@@ -5,6 +5,7 @@ export default function handler(req,res){
   const supabaseUrl='https://tvxwzkununcwxiwvrslh.supabase.co';
   const supabasePublishableKey='sb_publishable_--j19axhauUMNFXCgUumMA_d1teIy0H';
   res.setHeader('Cache-Control','no-store');
+  res.setHeader('X-Cardfolio-Config-Version','expert-queue-v1');
   res.status(200).json({
     configured:Boolean(supabaseUrl&&supabasePublishableKey),
     supabaseUrl,

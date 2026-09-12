@@ -58,9 +58,41 @@ async function refreshCloud(reason='timer',force=false){
   }
 }
 
+/* A category can contain far more cards than the Home 'Recently added' rail. The
+   earlier animated drawer had a fixed 950px cap and overflow:hidden, which made a
+   large Pokémon category look as though only recent cards existed. Keep the drawer
+   compact, but make the entire category scrollable. */
+function installCategoryDrawerOverflowFix(){
+  if(document.getElementById('cardfolio-category-overflow-fix'))return;
+  const style=document.createElement('style');
+  style.id='cardfolio-category-overflow-fix';
+  style.textContent='.home-category-drawer.open{max-height:min(78vh,1200px)!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}';
+  document.head.appendChild(style);
+}
+
+function loadCommunityLayer(){
+  if(!document.querySelector('link[data-cardfolio-community]')){
+    const link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href='/api/proxy?path=cardfolio-community.css&v=20260911-community-1';
+    link.dataset.cardfolioCommunity='1';
+    document.head.appendChild(link);
+  }
+  if(!window.cardfolioCommunityVersion&&!document.querySelector('script[data-cardfolio-community]')){
+    const script=document.createElement('script');
+    script.src='/api/proxy?path=cardfolio-community.js&v=20260911-community-1';
+    script.async=true;
+    script.dataset.cardfolioCommunity='1';
+    script.onerror=()=>console.warn('Cardfolio Community deferred');
+    document.head.appendChild(script);
+  }
+}
+
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshCloud('visible',false);});
 window.addEventListener('focus',()=>void refreshCloud('focus',false));
 window.addEventListener('pageshow',()=>void refreshCloud('pageshow',false));
 setInterval(()=>void refreshCloud('timer',false),POLL_MS);
 window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
+installCategoryDrawerOverflowFix();
+loadCommunityLayer();
 })();

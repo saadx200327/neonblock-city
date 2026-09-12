@@ -70,22 +70,28 @@ function installCategoryDrawerOverflowFix(){
   document.head.appendChild(style);
 }
 
-function loadCommunityLayer(){
-  if(!document.querySelector('link[data-cardfolio-community]')){
-    const link=document.createElement('link');
-    link.rel='stylesheet';
-    link.href='/api/proxy?path=cardfolio-community.css&v=20260911-community-1';
-    link.dataset.cardfolioCommunity='1';
-    document.head.appendChild(link);
-  }
-  if(!window.cardfolioCommunityVersion&&!document.querySelector('script[data-cardfolio-community]')){
-    const script=document.createElement('script');
-    script.src='/api/proxy?path=cardfolio-community.js&v=20260911-community-1';
-    script.async=true;
-    script.dataset.cardfolioCommunity='1';
-    script.onerror=()=>console.warn('Cardfolio Community deferred');
-    document.head.appendChild(script);
-  }
+function loadScript(path,key,version){
+  if(document.querySelector(`script[data-cardfolio-${key}]`))return;
+  const script=document.createElement('script');
+  script.src=`/api/proxy?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`;
+  script.async=true;
+  script.setAttribute(`data-cardfolio-${key}`,'1');
+  script.onerror=()=>console.warn(`Cardfolio ${key} deferred`);
+  document.head.appendChild(script);
+}
+function loadCss(path,key,version){
+  if(document.querySelector(`link[data-cardfolio-${key}]`))return;
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href=`/api/proxy?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`;
+  link.setAttribute(`data-cardfolio-${key}`,'1');
+  document.head.appendChild(link);
+}
+function loadProductLayers(){
+  loadCss('cardfolio-community.css','community','20260911-community-1');
+  if(!window.cardfolioCommunityVersion)loadScript('cardfolio-community.js','community','20260911-community-1');
+  loadCss('cardfolio-portfolio-lab.css','portfolio-lab','20260911-lab-1');
+  if(!window.cardfolioPortfolioLabVersion)loadScript('cardfolio-portfolio-lab.js','portfolio-lab','20260911-lab-1');
 }
 
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshCloud('visible',false);});
@@ -94,5 +100,5 @@ window.addEventListener('pageshow',()=>void refreshCloud('pageshow',false));
 setInterval(()=>void refreshCloud('timer',false),POLL_MS);
 window.cardfolioRefreshCloud=()=>refreshCloud('manual',true);
 installCategoryDrawerOverflowFix();
-loadCommunityLayer();
+loadProductLayers();
 })();
